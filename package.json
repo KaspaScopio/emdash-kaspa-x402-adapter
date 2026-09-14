@@ -1,0 +1,35 @@
+{
+  "name": "@kaspascopio/emdash-kaspa-x402",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Kaspa x402 backend adapter for EmDash",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "default": "./dist/index.js"
+    }
+  },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsup src/index.ts --format esm --dts --clean",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@emdash-cms/x402": ">=0.37.0",
+    "@kaspa-x402/core": ">=1.0.0-rc.1"
+  },
+  "devDependencies": {
+    "@emdash-cms/x402": "file:../emdash/packages/x402",
+    "@kaspa-x402/core": "file:../kaspa-x402/packages/core",
+    "@types/node": "^24.0.0",
+    "tsup": "^8.5.0",
+    "typescript": "^5.8.3",
+    "vitest": "^3.2.4"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "license": "MIT"
+}
