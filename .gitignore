@@ -6,3 +6,5 @@ coverage/
 .env.*
 .kaspa-x402-live/
 *.key
+
+.wrangler/

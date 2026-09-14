@@ -1,0 +1,56 @@
+name: Runtime compatibility
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  core-matrix:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        core: ["0.1.0-alpha.10", "1.0.0-rc.1"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm install --no-save --package-lock=false @kaspa-x402/core@${{ matrix.core }}
+      - run: npm test
+      - run: npm run typecheck
+      - run: npm run build
+
+  workerd-smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - name: Start workerd and verify adapter
+        shell: bash
+        run: |
+          set -euo pipefail
+          npx --yes wrangler@4.131.2 dev scripts/workerd-smoke.mjs --local --port 8799 --compatibility-date 2026-09-14 > /tmp/workerd.log 2>&1 &
+          pid=$!
+          trap 'kill $pid 2>/dev/null || true' EXIT
+          for attempt in {1..30}; do
+            if body=$(curl --fail --silent http://127.0.0.1:8799/); then
+              echo "$body"
+              node -e 'const v=JSON.parse(process.argv[1]); if (v.ok !== true || v.runtime !== "workerd" || v.status !== 402) process.exit(1)' "$body"
+              exit 0
+            fi
+            sleep 1
+          done
+          cat /tmp/workerd.log
+          exit 1
