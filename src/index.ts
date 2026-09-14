@@ -280,7 +280,7 @@ function assertSubmittedTerms(
   try {
     payload = decodePaymentSignatureHeader(header);
   } catch {
-    return;
+    throw new Error("Kaspa x402 PAYMENT-SIGNATURE is invalid");
   }
   if (!matchesTerms(payload.accepted, expected)) {
     throw new Error("Kaspa x402 payment terms do not match EmDash");
