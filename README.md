@@ -81,13 +81,22 @@ These checks use only public npm dependencies.
 
 ## Testnet proof
 
-With a funded TN10 key file at `~/.kaspa-test/tn10.key` and the Kaspa WASM module available, run:
+The live proof is intentionally wired to the public `elldeeone/kaspa-x402` reference harness rather than a private copy. For a reproducible run, use a separate checkout and pin the exact upstream revision. The example below pins `25893d68fc650cf307339619c8460b8814eba6c5`, the public `main` revision at the time these instructions were written.
 
 ```bash
-npm run proof:tn10
+git clone https://github.com/elldeeone/kaspa-x402.git ../kaspa-x402
+git -C ../kaspa-x402 checkout 25893d68fc650cf307339619c8460b8814eba6c5
+npm ci --prefix ../kaspa-x402
+npm ci
+npm run build
+
+export KASPA_X402_ROOT="$PWD/../kaspa-x402"
+export KASPA_X402_EXPECTED_REF=25893d68fc650cf307339619c8460b8814eba6c5
+export KASPA_X402_KASPA_WASM_MODULE=/absolute/path/to/kaspa.js
+npm run proof:tn10 -- /absolute/path/to/tn10.key
 ```
 
-The proof uses real Testnet-10 funds. It does not print the private key.
+`KASPA_X402_KASPA_WASM_MODULE` is the same explicit dependency required by the upstream reference live adapter. The proof uses real Testnet-10 funds, validates the full paid/replay flow, and does not print the private key. A different `kaspa-x402` revision can be tested by changing `KASPA_X402_EXPECTED_REF`. Every live run is evidence only for the exact revision and environment used for that run; the previously recorded TN10 transaction remains the historical proof already documented above.
 
 ## Mainnet
 

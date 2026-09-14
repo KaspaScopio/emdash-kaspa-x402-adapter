@@ -2,20 +2,43 @@
 import fs from "node:fs";
 import os from "node:os";
 import path from "node:path";
+import { execFileSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 
 const ADAPTER_ROOT = path.resolve(import.meta.dirname, "..");
-const KASPA_ROOT = path.resolve(ADAPTER_ROOT, "../kaspa-x402");
+const KASPA_ROOT = path.resolve(
+  process.env.KASPA_X402_ROOT || path.join(ADAPTER_ROOT, "../kaspa-x402"),
+);
 const BASE_PROOF = path.join(KASPA_ROOT, "scripts/live-adapter-reference.mjs");
 const RUNTIME_PROOF = path.join(KASPA_ROOT, "scripts/.emdash-adapter-tn10-runtime.mjs");
 const ADAPTER_DIST = path.join(ADAPTER_ROOT, "dist/index.js");
-const DEFAULT_SDK = path.join(os.homedir(), "kaspa-x402-lab/node_modules/kaspa-x402/vendor/kaspa-wasm-2.0.1/kaspa.js");
 const DEFAULT_RPC = "wss://vector-10.kaspa.green/kaspa/testnet-10/wrpc/borsh";
 
 const keyFile = path.resolve(process.argv[2] || path.join(os.homedir(), ".kaspa-test/tn10.key"));
 if (!fs.existsSync(keyFile)) throw new Error(`TN10 key file not found: ${keyFile}`);
-if (!fs.existsSync(BASE_PROOF)) throw new Error(`Kaspa live proof not found: ${BASE_PROOF}`);
+if (!fs.existsSync(BASE_PROOF)) {
+  throw new Error(
+    `Kaspa live proof not found: ${BASE_PROOF}. Set KASPA_X402_ROOT to a kaspa-x402 checkout.`,
+  );
+}
 if (!fs.existsSync(ADAPTER_DIST)) throw new Error("adapter dist missing; run npm run build first");
+const sdkPath = process.env.KASPA_X402_KASPA_WASM_MODULE;
+if (!sdkPath) {
+  throw new Error(
+    "KASPA_X402_KASPA_WASM_MODULE is required; point it to the kaspa.js WASM module used by the kaspa-x402 reference live adapter",
+  );
+}
+const expectedRef = process.env.KASPA_X402_EXPECTED_REF || "";
+if (expectedRef) {
+  const actualRef = execFileSync("git", ["-C", KASPA_ROOT, "rev-parse", "HEAD"], {
+    encoding: "utf8",
+  }).trim();
+  if (!actualRef.startsWith(expectedRef)) {
+    throw new Error(
+      `kaspa-x402 checkout mismatch: expected ${expectedRef}, got ${actualRef}`,
+    );
+  }
+}
 const adapterImport = `import { createKaspaX402Backend } from ${JSON.stringify(pathToFileURL(ADAPTER_DIST).href)};\n`;
 let source = fs.readFileSync(BASE_PROOF, "utf8");
 
@@ -110,7 +133,6 @@ const proofReplay = String.raw`
 `;
 source = source.replace(proofMarker, proofBlock + proofRun + proofReplay + "\n" + proofMarker);
 fs.writeFileSync(RUNTIME_PROOF, source, { mode: 0o600 });
-const sdkPath = process.env.KASPA_X402_KASPA_WASM_MODULE || DEFAULT_SDK;
 const rpcUrl = process.env.KASPA_X402_RPC_URL || DEFAULT_RPC;
 const providedDataDir = process.env.KASPA_X402_DATA_DIR || "";
 const dataDir = providedDataDir || fs.mkdtempSync(path.join(os.tmpdir(), "emdash-kaspa-x402-e2e-"));
