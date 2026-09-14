@@ -31,6 +31,8 @@ Latest maintained proof transaction:
 
 See [`COMPATIBILITY.md`](./COMPATIBILITY.md) for the tested runtime matrix, including Node, Astro, Cloudflare workerd, generic browser bundling, and TN10 live proof status.
 
+Release preparation is tracked in [`RELEASE_CHECKLIST.md`](./RELEASE_CHECKLIST.md); npm publication remains intentionally blocked.
+
 ## Safety boundary
 
 The package deliberately does **not** construct a production `DirectModeServer` for you. Stores, chain providers, verifiers, finality policy, keys, and deployment security remain application responsibilities.
