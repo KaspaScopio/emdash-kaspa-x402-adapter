@@ -27,6 +27,10 @@ The npm package is intentionally marked `private` for now; public source review 
 Latest maintained proof transaction:
 `340712f53d687c89e294ca4df807be0d599acba64c6052caa90013f357b34956`
 
+## Compatibility
+
+See [`COMPATIBILITY.md`](./COMPATIBILITY.md) for the tested runtime matrix, including Node, Astro, Cloudflare workerd, generic browser bundling, and TN10 live proof status.
+
 ## Safety boundary
 
 The package deliberately does **not** construct a production `DirectModeServer` for you. Stores, chain providers, verifiers, finality policy, keys, and deployment security remain application responsibilities.

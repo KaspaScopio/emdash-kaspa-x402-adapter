@@ -222,3 +222,114 @@ describe("Kaspa x402 EmDash backend", () => {
     expect(backend.hasPayment(new Request(resourceUrl))).toBe(false);
   });
 });
+
+describe("Kaspa x402 backend hardening", () => {
+  it("initializes serverFactory only once under concurrent first requests", async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((resolve) => { release = resolve; });
+    const handlePaidRequest = vi.fn(async (request) => serverResponse(request));
+    const serverFactory = vi.fn(async () => {
+      await gate;
+      return { handlePaidRequest };
+    });
+    const backend = createKaspaX402Backend({ serverFactory });
+
+    const pending = Array.from({ length: 20 }, () =>
+      backend.enforce(new Request(resourceUrl), context()),
+    );
+    await Promise.resolve();
+    expect(serverFactory).toHaveBeenCalledOnce();
+    release();
+    const results = await Promise.all(pending);
+
+    expect(results).toHaveLength(20);
+    expect(serverFactory).toHaveBeenCalledOnce();
+    expect(handlePaidRequest).toHaveBeenCalledTimes(20);
+  });
+
+  it("fails closed on a malformed PAYMENT-SIGNATURE", async () => {
+    const handlePaidRequest = vi.fn(async (request) => serverResponse(request));
+    const backend = createKaspaX402BackendFromServer({ handlePaidRequest });
+    const request = new Request(resourceUrl, {
+      headers: { "PAYMENT-SIGNATURE": "not-a-valid-x402-header" },
+    });
+
+    await expect(backend.enforce(request, context())).rejects.toThrow(
+      "PAYMENT-SIGNATURE is invalid",
+    );
+    expect(handlePaidRequest).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    ["amount", { amount: "1" }],
+    ["payTo", { payTo: "kaspatest:other" }],
+    ["network", { network: "kaspa:mainnet" }],
+    ["timeout", { maxTimeoutSeconds: 61 }],
+  ])("rejects submitted payment with mismatched %s", async (_name, override) => {
+    const handlePaidRequest = vi.fn(async (request) => serverResponse(request));
+    const backend = createKaspaX402BackendFromServer({ handlePaidRequest });
+    const request = new Request(resourceUrl, {
+      headers: { "PAYMENT-SIGNATURE": paymentHeader(override) },
+    });
+
+    await expect(backend.enforce(request, context())).rejects.toThrow(
+      "payment terms do not match",
+    );
+    expect(handlePaidRequest).not.toHaveBeenCalled();
+  });
+
+});
+
+describe("Kaspa x402 backend negative responses", () => {
+  it("returns 405 before calling the Kaspa server for a disallowed method", async () => {
+    const handlePaidRequest = vi.fn();
+    const backend = createKaspaX402BackendFromServer({ handlePaidRequest });
+    const result = await backend.enforce(
+      new Request(resourceUrl, { method: "POST" }),
+      context(),
+    );
+
+    expect(result).toBeInstanceOf(Response);
+    const response = result as Response;
+    expect(response.status).toBe(405);
+    expect(response.headers.get("Allow")).toBe("GET, HEAD");
+    expect(handlePaidRequest).not.toHaveBeenCalled();
+  });
+
+  it("rejects a 402 challenge whose terms differ from EmDash", async () => {
+    const handlePaidRequest = vi.fn(async () => ({
+      status: 402,
+      headers: { "PAYMENT-REQUIRED": requiredHeader({ amount: "1" }) },
+    }));
+    const backend = createKaspaX402BackendFromServer({ handlePaidRequest });
+
+    await expect(backend.enforce(new Request(resourceUrl), context())).rejects.toThrow(
+      "server challenge does not match EmDash",
+    );
+  });
+
+  it("rejects a paid success without PAYMENT-RESPONSE", async () => {
+    const handlePaidRequest = vi.fn(async () => ({ status: 200, headers: {} }));
+    const backend = createKaspaX402BackendFromServer({ handlePaidRequest });
+    const request = new Request(resourceUrl, {
+      headers: { "PAYMENT-SIGNATURE": paymentHeader() },
+    });
+
+    await expect(backend.enforce(request, context())).rejects.toThrow(
+      "success without payment settlement",
+    );
+  });
+
+  it("keeps mainnet disabled by default", async () => {
+    const handlePaidRequest = vi.fn();
+    const backend = createKaspaX402BackendFromServer({ handlePaidRequest });
+
+    await expect(
+      backend.enforce(
+        new Request(resourceUrl),
+        context({ network: "kaspa:mainnet" as const }),
+      ),
+    ).rejects.toThrow("mainnet is disabled");
+    expect(handlePaidRequest).not.toHaveBeenCalled();
+  });
+});
