@@ -14,7 +14,8 @@
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
     "test": "vitest run",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "proof:tn10": "npm run build && node scripts/proof-tn10-e2e.mjs"
   },
   "peerDependencies": {
     "@emdash-cms/x402": ">=0.37.0",
