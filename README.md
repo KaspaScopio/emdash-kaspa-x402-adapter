@@ -2,7 +2,7 @@
 
 ![CI](https://github.com/KaspaScopio/emdash-kaspa-x402-adapter/actions/workflows/ci.yml/badge.svg)
 
-Community adapter that connects `@emdash-cms/x402` to a Kaspa x402 `DirectModeServer`-compatible server.
+A small community adapter that lets EmDash use a Kaspa x402 `DirectModeServer` as an external payment backend.
 
 > **Status:** experimental, Testnet-10 validated. Mainnet is disabled by default and has not been approved for production use.
 
@@ -12,7 +12,7 @@ This repository is maintained by KaspaScopio. It is not an official EmDash or Ka
 
 The adapter itself is implemented and TN10-validated, but the full Astro configuration shown below depends on a **pending EmDash extension for pluggable x402 backends and statically injected backend options**. As of 2026-09-14, those changes are not present on EmDash upstream `main`.
 
-KaspaScopio is publishing this adapter first to request technical review before proposing or finalizing upstream integration. Do not treat the example below as supported by stock `@emdash-cms/x402` yet.
+We are publishing the adapter first so maintainers can review the approach before we propose upstream changes. For now, the example below depends on our prototype EmDash extension and is not supported by stock `@emdash-cms/x402` yet.
 
 The npm package is intentionally marked `private` for now; public source review does not imply an npm release.
 
@@ -91,7 +91,7 @@ Mainnet is rejected unless `allowMainnet: true` is explicitly passed to the back
 
 ## Technical review
 
-Review is welcome, especially around protocol overlap, server lifecycle, replay/idempotency semantics, and whether any part of this adapter should live upstream in EmDash or Kaspa x402.
+Feedback is very welcome, especially on whether this overlaps planned work, how the server lifecycle should be handled, replay/idempotency expectations, and which pieces (if any) would be better upstream in EmDash or Kaspa x402.
 
 Current review threads:
 
