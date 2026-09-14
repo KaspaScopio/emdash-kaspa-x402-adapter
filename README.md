@@ -93,6 +93,11 @@ Mainnet is rejected unless `allowMainnet: true` is explicitly passed to the back
 
 Review is welcome, especially around protocol overlap, server lifecycle, replay/idempotency semantics, and whether any part of this adapter should live upstream in EmDash or Kaspa x402.
 
+Current review threads:
+
+- EmDash architecture discussion: https://github.com/emdash-cms/emdash/discussions/3110
+- Kaspa x402 integration review: https://github.com/elldeeone/kaspa-x402/issues/15
+
 ## License
 
 MIT. See `LICENSE`.
