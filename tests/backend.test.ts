@@ -6,6 +6,7 @@ import {
 import { describe, expect, it, vi } from "vitest";
 
 import {
+  createKaspaX402Backend,
   createKaspaX402BackendFromServer,
   type KaspaServerResponse,
 } from "../src/index.js";
@@ -113,6 +114,28 @@ function context(overrides = {}) {
 }
 
 describe("Kaspa x402 EmDash backend", () => {
+
+  it("initializes an injected server factory lazily and only once", async () => {
+    const handlePaidRequest = vi.fn(async (request) => serverResponse(request));
+    const serverFactory = vi.fn(async () => ({ handlePaidRequest }));
+    const backend = createKaspaX402Backend({
+      serverFactory,
+      serverOptions: { source: "astro-static-import" },
+    });
+
+    expect(serverFactory).not.toHaveBeenCalled();
+    expect(backend.hasPayment(new Request(resourceUrl))).toBe(false);
+
+    const first = await backend.enforce(new Request(resourceUrl), context());
+    const second = await backend.enforce(new Request(resourceUrl), context());
+
+    expect(first).toBeInstanceOf(Response);
+    expect(second).toBeInstanceOf(Response);
+    expect(serverFactory).toHaveBeenCalledOnce();
+    expect(serverFactory).toHaveBeenCalledWith({ source: "astro-static-import" });
+    expect(handlePaidRequest).toHaveBeenCalledTimes(2);
+  });
+
   it("returns the server's challenge for an unpaid request", async () => {
     const handlePaidRequest = vi.fn(async (request) => serverResponse(request));
     const backend = createKaspaX402BackendFromServer({ handlePaidRequest });

@@ -47,6 +47,44 @@ export interface KaspaX402BackendOptions {
   allowedMethods?: readonly string[];
 }
 
+export interface KaspaX402BackendFactoryOptions extends KaspaX402BackendOptions {
+  server?: KaspaDirectModeServer;
+  serverFactory?: (
+    options?: Record<string, unknown>,
+  ) => KaspaDirectModeServer | Promise<KaspaDirectModeServer>;
+  serverOptions?: Record<string, unknown>;
+}
+
+export function createKaspaX402Backend(
+  options: KaspaX402BackendFactoryOptions = {},
+): X402Backend {
+  const { server, serverFactory, serverOptions, ...backendOptions } = options;
+  if ((server ? 1 : 0) + (serverFactory ? 1 : 0) !== 1) {
+    throw new TypeError(
+      "Kaspa x402 backend requires exactly one of server or serverFactory",
+    );
+  }
+
+  let backendPromise: Promise<X402Backend> | undefined;
+  const resolveBackend = (): Promise<X402Backend> => {
+    backendPromise ??= Promise.resolve(
+      server ? server : serverFactory!(serverOptions),
+    ).then((resolvedServer) =>
+      createKaspaX402BackendFromServer(resolvedServer, backendOptions),
+    );
+    return backendPromise;
+  };
+
+  return {
+    async enforce(request, context) {
+      return (await resolveBackend()).enforce(request, context);
+    },
+    hasPayment(request) {
+      return request.headers.has(PAYMENT_SIGNATURE_HEADER);
+    },
+  };
+}
+
 export function createKaspaX402BackendFromServer(
   server: KaspaDirectModeServer,
   options: KaspaX402BackendOptions = {},

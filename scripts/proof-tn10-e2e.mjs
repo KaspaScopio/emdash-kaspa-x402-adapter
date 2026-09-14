@@ -16,7 +16,7 @@ const keyFile = path.resolve(process.argv[2] || path.join(os.homedir(), ".kaspa-
 if (!fs.existsSync(keyFile)) throw new Error(`TN10 key file not found: ${keyFile}`);
 if (!fs.existsSync(BASE_PROOF)) throw new Error(`Kaspa live proof not found: ${BASE_PROOF}`);
 if (!fs.existsSync(ADAPTER_DIST)) throw new Error("adapter dist missing; run npm run build first");
-const adapterImport = `import { createKaspaX402BackendFromServer } from ${JSON.stringify(pathToFileURL(ADAPTER_DIST).href)};\n`;
+const adapterImport = `import { createKaspaX402Backend } from ${JSON.stringify(pathToFileURL(ADAPTER_DIST).href)};\n`;
 let source = fs.readFileSync(BASE_PROOF, "utf8");
 
 const importMarker = 'import { sanitizeProofOutputText } from "./proof-output-security.mjs";\n';
@@ -49,7 +49,8 @@ const proofBlock = String.raw`
         });
       },
     };
-    const backend = createKaspaX402BackendFromServer(countingServer);
+    const serverFactory = async () => countingServer;
+    const backend = createKaspaX402Backend({ serverFactory });
     const adapterUrl = "https://live.kaspa-x402.local/emdash-adapter/e2e";
     const adapterContext = {
       price: "0.1",
