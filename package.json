@@ -2,7 +2,7 @@
   "name": "@kaspascopio/emdash-kaspa-x402",
   "version": "0.1.0",
   "private": true,
-  "description": "Kaspa x402 backend adapter for EmDash",
+  "description": "Community Kaspa x402 backend adapter for EmDash",
   "type": "module",
   "exports": {
     ".": {
@@ -10,7 +10,9 @@
       "default": "./dist/index.js"
     }
   },
-  "files": ["dist"],
+  "files": [
+    "dist"
+  ],
   "scripts": {
     "build": "tsup src/index.ts --format esm --dts --clean",
     "test": "vitest run",
@@ -18,12 +20,10 @@
     "proof:tn10": "npm run build && node scripts/proof-tn10-e2e.mjs"
   },
   "peerDependencies": {
-    "@emdash-cms/x402": ">=0.37.0",
-    "@kaspa-x402/core": ">=1.0.0-rc.1"
+    "@kaspa-x402/core": ">=0.1.0-alpha.10"
   },
   "devDependencies": {
-    "@emdash-cms/x402": "file:../emdash/packages/x402",
-    "@kaspa-x402/core": "file:../kaspa-x402/packages/core",
+    "@kaspa-x402/core": "0.1.0-alpha.10",
     "@types/node": "^24.0.0",
     "tsup": "^8.5.0",
     "typescript": "^5.8.3",
@@ -32,5 +32,13 @@
   "engines": {
     "node": ">=22.0.0"
   },
-  "license": "MIT"
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/KaspaScopio/emdash-kaspa-x402-adapter.git"
+  },
+  "homepage": "https://github.com/KaspaScopio/emdash-kaspa-x402-adapter#readme",
+  "bugs": {
+    "url": "https://github.com/KaspaScopio/emdash-kaspa-x402-adapter/issues"
+  }
 }

@@ -2,12 +2,36 @@ import {
   decodePaymentRequiredHeader,
   decodePaymentSignatureHeader,
 } from "@kaspa-x402/core";
-import type {
-  EnforceResult,
-  Price,
-  X402Backend,
-  X402BackendContext,
-} from "@emdash-cms/x402";
+export type Price =
+  | string
+  | number
+  | { amount: string; asset: string; extra?: Record<string, unknown> };
+
+export interface X402BackendContext {
+  price: Price;
+  payTo: string;
+  network: `${string}:${string}`;
+  scheme: string;
+  maxTimeoutSeconds: number;
+  description?: string;
+  mimeType?: string;
+}
+
+export interface EnforceResult {
+  paid: boolean;
+  skipped: boolean;
+  payer?: string;
+  settlement?: unknown;
+  responseHeaders: Record<string, string>;
+}
+
+export interface X402Backend {
+  enforce(
+    request: Request,
+    context: X402BackendContext,
+  ): Promise<Response | EnforceResult>;
+  hasPayment(request: Request): boolean;
+}
 
 const PAYMENT_REQUIRED_HEADER = "PAYMENT-REQUIRED";
 const PAYMENT_RESPONSE_HEADER = "PAYMENT-RESPONSE";
