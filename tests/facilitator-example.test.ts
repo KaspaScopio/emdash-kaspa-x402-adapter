@@ -251,7 +251,12 @@ describe("experimental facilitator HTTP transport", () => {
       }
       if (url.endsWith("/settle")) {
         expect(init?.method).toBe("POST");
-        return Response.json({ success: true, transaction: "aa".repeat(32) });
+        return Response.json({
+          success: true,
+          transaction: "aa".repeat(32),
+          network: "kaspa:testnet-10",
+          amount: "20000000",
+        });
       }
       return new Response(null, { status: 404 });
     });

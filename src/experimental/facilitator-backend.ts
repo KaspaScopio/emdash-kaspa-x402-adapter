@@ -2,6 +2,7 @@ import {
   decodePaymentSignatureHeader,
   encodePaymentRequiredHeader,
   encodePaymentResponseHeader,
+  validateSettlementResponse,
 } from "@kaspa-x402/core";
 
 import type {
@@ -415,15 +416,9 @@ function verifyResponse(value: unknown): FacilitatorVerifyResponse {
 }
 
 function settleResponse(value: unknown): FacilitatorSettleResponse {
-  if (
-    !isRecord(value) ||
-    typeof value.success !== "boolean" ||
-    typeof value.transaction !== "string"
-  ) {
+  const result = validateSettlementResponse(value);
+  if (!result.ok) {
     throw new Error("Kaspa x402 facilitator returned invalid /settle JSON");
   }
-  if (value.errorReason !== undefined && typeof value.errorReason !== "string") {
-    throw new Error("Kaspa x402 facilitator returned invalid /settle JSON");
-  }
-  return value as FacilitatorSettleResponse;
+  return result.value as FacilitatorSettleResponse;
 }

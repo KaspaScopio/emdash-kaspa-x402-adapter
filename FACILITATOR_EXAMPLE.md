@@ -91,3 +91,17 @@ Validated end to end:
 - the test server observed exactly one verification call and one settlement call.
 
 The harness used an in-memory stub behind the real facilitator router, so this is protocol-boundary evidence rather than a funded TN10 settlement proof. No unpublished facilitator dependency was added to this package and the harness is not shipped.
+
+## Requirements-construction boundary
+
+At upstream revision `25893d68fc650cf307339619c8460b8814eba6c5`,
+`@kaspa-x402/core` exports requirement types, validation and normalization, but
+not a standalone public requirements constructor. Authoritative construction is
+currently exposed through `DirectModeServer.buildPaymentRequired()` in
+`@kaspa-x402/server`.
+
+That means the `paymentRequirementsProvider` in this experiment represents a
+real deployment boundary for a resource server that wants to use only a remote
+facilitator. This observation does not prescribe whether upstream should add a
+helper, add a facilitator challenge operation, or keep requirements construction
+with a locally configured server.
