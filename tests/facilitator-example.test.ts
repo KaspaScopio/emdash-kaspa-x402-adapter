@@ -1,5 +1,6 @@
 import {
   decodePaymentRequiredHeader,
+  decodePaymentResponseHeader,
   encodePaymentSignatureHeader,
 } from "@kaspa-x402/core";
 import { describe, expect, it, vi } from "vitest";
@@ -68,7 +69,12 @@ function paymentHeader(overrides = {}) {
 function transport(overrides: Partial<FacilitatorTransport> = {}) {
   const base: FacilitatorTransport = {
     supported: vi.fn(async () => ({
-      kinds: [{ x402Version: 2, scheme: "exact", network: "kaspa:testnet-10" }],
+      kinds: [{
+        x402Version: 2,
+        scheme: "exact",
+        network: "kaspa:testnet-10",
+        extra: { modes: ["verify", "settle"] },
+      }],
       extensions: [],
       signers: {},
     })),
@@ -119,6 +125,17 @@ describe("experimental facilitator-backed EmDash example", () => {
       expect.objectContaining({ requestHash, paymentRequirements: requirements }),
     );
     expect(result).toMatchObject({ paid: true, payer: "kaspatest:payer" });
+    if (result instanceof Response || !result.responseHeaders) {
+      throw new Error("expected paid facilitator result with response headers");
+    }
+    const settlement = decodePaymentResponseHeader(
+      result.responseHeaders["PAYMENT-RESPONSE"]!,
+    );
+    expect(settlement).toMatchObject({
+      success: true,
+      transaction: "aa".repeat(32),
+      network: "kaspa:testnet-10",
+    });
   });
   it("does not settle when facilitator verification fails", async () => {
     const mockTransport = transport({
@@ -146,6 +163,27 @@ describe("experimental facilitator-backed EmDash example", () => {
     expect(mockTransport.verify).not.toHaveBeenCalled();
     expect(mockTransport.settle).not.toHaveBeenCalled();
   });
+  it("fails closed when exact TN10 omits the settle capability", async () => {
+    const mockTransport = transport({
+      supported: vi.fn(async () => ({
+        kinds: [{
+          x402Version: 2,
+          scheme: "exact",
+          network: "kaspa:testnet-10",
+          extra: { modes: ["verify"] },
+        }],
+        extensions: [],
+        signers: {},
+      })),
+    });
+
+    await expect(
+      backend(mockTransport).enforce(new Request(resourceUrl), context),
+    ).rejects.toThrow("does not advertise verify+settle");
+    expect(mockTransport.verify).not.toHaveBeenCalled();
+    expect(mockTransport.settle).not.toHaveBeenCalled();
+  });
+
   it("fails closed when the facilitator does not advertise exact TN10", async () => {
     const mockTransport = transport({
       supported: vi.fn(async () => ({ kinds: [], extensions: [], signers: {} })),

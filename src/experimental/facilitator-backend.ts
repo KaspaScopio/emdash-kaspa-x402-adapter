@@ -200,7 +200,7 @@ async function assertFacilitatorSupports(
   terms: ResolvedTerms,
 ): Promise<void> {
   const supported = await transport.supported();
-  const match = supported.kinds.some(
+  const match = supported.kinds.find(
     (kind) =>
       kind.x402Version === 2 &&
       kind.scheme === terms.scheme &&
@@ -209,6 +209,16 @@ async function assertFacilitatorSupports(
   if (!match) {
     throw new Error(
       `Kaspa x402 facilitator does not support ${terms.scheme} on ${terms.network}`,
+    );
+  }
+  const modes = match.extra?.modes;
+  if (
+    !Array.isArray(modes) ||
+    !modes.includes("verify") ||
+    !modes.includes("settle")
+  ) {
+    throw new Error(
+      `Kaspa x402 facilitator does not advertise verify+settle for ${terms.scheme} on ${terms.network}`,
     );
   }
 }

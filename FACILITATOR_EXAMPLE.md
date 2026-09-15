@@ -11,6 +11,8 @@ It targets the public upstream facilitator shape at `elldeeone/kaspa-x402` revis
 
 The direct `DirectModeServer.handlePaidRequest()` backend remains the reference path.
 
+A local interoperability smoke against the built upstream `DirectModeFacilitator` and `handleFacilitatorRequest()` at that exact revision confirmed that this experiment's `/supported`, `/verify`, and `/settle` request shapes are accepted without using wallet keys, RPC, or a live network. The smoke was intentionally kept out of the committed suite because it depends on a sibling upstream checkout.
+
 ## The concrete missing piece
 
 For EmDash, `/supported` is sufficient to answer “can this facilitator handle exact payments on TN10?”, but it does not provide the full dynamic `PaymentRequirements` needed to issue the initial x402 `402` challenge.
@@ -21,7 +23,7 @@ The example isolates this requirement behind `paymentRequirementsProvider`. It i
 ## Example flow
 
 1. Validate EmDash route terms; mainnet remains disabled by default.
-2. Call `/supported` and require x402 v2 + `exact` + the requested Kaspa network.
+2. Call `/supported` and require x402 v2 + `exact` + the requested Kaspa network, with both `verify` and `settle` advertised in `extra.modes`.
 3. Obtain full authoritative requirements from `paymentRequirementsProvider`.
 4. Unpaid: return those requirements in `PAYMENT-REQUIRED`.
 5. Paid: recover authoritative requirements again and require exact equality with the signed `accepted` terms.
