@@ -73,3 +73,18 @@ The experimental transport intentionally performs no automatic retries.
 - `/settle` transport failure is treated as an uncertain outcome; the adapter does not blindly issue a second settlement request.
 
 This is deliberately conservative. Any future retry policy should depend on an explicit facilitator idempotency/recovery contract rather than generic HTTP retry behavior.
+
+## Real upstream-router interoperability
+
+A disposable local harness was also run against Kaspa x402 upstream commit
+`25893d68fc650cf307339619c8460b8814eba6c5` using the real
+`DirectModeFacilitator` and `handleFacilitatorRequest()` implementation.
+
+Validated end to end:
+
+- `/supported` advertises executable `exact` TN10 capability only when the server kind includes `extra.modes` for `verify` and `settle`;
+- the experimental HTTP transport interoperates with the real `/supported`, `/verify`, and `/settle` routes;
+- the full experimental EmDash backend produces the initial `402`, accepts a matching `PAYMENT-SIGNATURE`, derives its own `requestHash`, then reaches the real facilitator router for verification and settlement;
+- the test server observed exactly one verification call and one settlement call.
+
+The harness used an in-memory stub behind the real facilitator router, so this is protocol-boundary evidence rather than a funded TN10 settlement proof. No unpublished facilitator dependency was added to this package and the harness is not shipped.
