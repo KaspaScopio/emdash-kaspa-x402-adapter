@@ -349,3 +349,30 @@ describe("experimental facilitator failure boundaries", () => {
     expect(settle).toHaveBeenCalledTimes(1);
   });
 });
+
+
+describe("facilitator response validation", () => {
+  it("rejects malformed /supported JSON", async () => {
+    const client = createFacilitatorHttpTransport(
+      "https://facilitator.example",
+      vi.fn(async () => Response.json({ kinds: "not-an-array" })) as unknown as typeof fetch,
+    );
+    await expect(client.supported()).rejects.toThrow("invalid /supported JSON");
+  });
+
+  it("rejects malformed /verify JSON", async () => {
+    const client = createFacilitatorHttpTransport(
+      "https://facilitator.example",
+      vi.fn(async () => Response.json({ isValid: "yes" })) as unknown as typeof fetch,
+    );
+    await expect(client.verify({ example: true })).rejects.toThrow("invalid /verify JSON");
+  });
+
+  it("rejects malformed /settle JSON", async () => {
+    const client = createFacilitatorHttpTransport(
+      "https://facilitator.example",
+      vi.fn(async () => Response.json({ success: true })) as unknown as typeof fetch,
+    );
+    await expect(client.settle({ example: true })).rejects.toThrow("invalid /settle JSON");
+  });
+});

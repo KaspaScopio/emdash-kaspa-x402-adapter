@@ -351,18 +351,18 @@ export function createFacilitatorHttpTransport(
   const root = baseUrl.replace(/\/$/, "");
   return {
     async supported() {
-      return readJson<FacilitatorSupportedResponse>(
-        await fetchImpl(`${root}/supported`, { method: "GET" }),
+      return supportedResponse(
+        await readJson(await fetchImpl(`${root}/supported`, { method: "GET" })),
       );
     },
     async verify(input) {
-      return readJson<FacilitatorVerifyResponse>(
-        await fetchImpl(`${root}/verify`, jsonPost(input)),
+      return verifyResponse(
+        await readJson(await fetchImpl(`${root}/verify`, jsonPost(input))),
       );
     },
     async settle(input) {
-      return readJson<FacilitatorSettleResponse>(
-        await fetchImpl(`${root}/settle`, jsonPost(input)),
+      return settleResponse(
+        await readJson(await fetchImpl(`${root}/settle`, jsonPost(input))),
       );
     },
   };
@@ -375,11 +375,55 @@ function jsonPost(body: JsonRecord): RequestInit {
     body: JSON.stringify(body),
   };
 }
-async function readJson<T>(response: Response): Promise<T> {
+async function readJson(response: Response): Promise<unknown> {
   if (!response.ok) {
     throw new Error(
       `Kaspa x402 facilitator HTTP ${response.status} ${response.statusText}`,
     );
   }
-  return (await response.json()) as T;
+  return response.json();
+}
+
+function supportedResponse(value: unknown): FacilitatorSupportedResponse {
+  if (!isRecord(value) || !Array.isArray(value.kinds)) {
+    throw new Error("Kaspa x402 facilitator returned invalid /supported JSON");
+  }
+  if (!Array.isArray(value.extensions) || !isRecord(value.signers)) {
+    throw new Error("Kaspa x402 facilitator returned invalid /supported JSON");
+  }
+  for (const kind of value.kinds) {
+    if (
+      !isRecord(kind) ||
+      typeof kind.x402Version !== "number" ||
+      typeof kind.scheme !== "string" ||
+      typeof kind.network !== "string"
+    ) {
+      throw new Error("Kaspa x402 facilitator returned invalid /supported JSON");
+    }
+  }
+  return value as FacilitatorSupportedResponse;
+}
+
+function verifyResponse(value: unknown): FacilitatorVerifyResponse {
+  if (!isRecord(value) || typeof value.isValid !== "boolean") {
+    throw new Error("Kaspa x402 facilitator returned invalid /verify JSON");
+  }
+  if (value.invalidReason !== undefined && typeof value.invalidReason !== "string") {
+    throw new Error("Kaspa x402 facilitator returned invalid /verify JSON");
+  }
+  return value as FacilitatorVerifyResponse;
+}
+
+function settleResponse(value: unknown): FacilitatorSettleResponse {
+  if (
+    !isRecord(value) ||
+    typeof value.success !== "boolean" ||
+    typeof value.transaction !== "string"
+  ) {
+    throw new Error("Kaspa x402 facilitator returned invalid /settle JSON");
+  }
+  if (value.errorReason !== undefined && typeof value.errorReason !== "string") {
+    throw new Error("Kaspa x402 facilitator returned invalid /settle JSON");
+  }
+  return value as FacilitatorSettleResponse;
 }
