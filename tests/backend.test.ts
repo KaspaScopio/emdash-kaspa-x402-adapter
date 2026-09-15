@@ -207,6 +207,36 @@ describe("Kaspa x402 EmDash backend", () => {
     ).rejects.toThrow("fiat prices");
   });
 
+  it("rejects a whitespace-only payTo before calling the server", async () => {
+    const handlePaidRequest = vi.fn();
+    const backend = createKaspaX402BackendFromServer({ handlePaidRequest });
+
+    await expect(
+      backend.enforce(new Request(resourceUrl), context({ payTo: "   " })),
+    ).rejects.toThrow("payTo must not be empty");
+    expect(handlePaidRequest).not.toHaveBeenCalled();
+  });
+
+  it("normalizes configured allowed methods case-insensitively", async () => {
+    const handlePaidRequest = vi.fn(async (request) => serverResponse(request));
+    const backend = createKaspaX402BackendFromServer(
+      { handlePaidRequest },
+      { allowedMethods: ["get"] },
+    );
+
+    const getResult = await backend.enforce(new Request(resourceUrl), context());
+    const headResult = await backend.enforce(
+      new Request(resourceUrl, { method: "HEAD" }),
+      context(),
+    );
+
+    expect(getResult).toBeInstanceOf(Response);
+    expect(headResult).toBeInstanceOf(Response);
+    expect((headResult as Response).status).toBe(405);
+    expect((headResult as Response).headers.get("Allow")).toBe("GET");
+    expect(handlePaidRequest).toHaveBeenCalledOnce();
+  });
+
   it("detects payment headers without decoding them", () => {
     const backend = createKaspaX402BackendFromServer({
       handlePaidRequest: vi.fn(),

@@ -233,7 +233,7 @@ function resolveTerms(
   ) {
     throw new Error("Kaspa x402 timeout must be a positive integer");
   }
-  if (!context.payTo) {
+  if (!context.payTo.trim()) {
     throw new Error("Kaspa x402 payTo must not be empty");
   }
 
@@ -326,7 +326,6 @@ function matchesTerms(
     candidate.network === expected.network &&
     candidate.scheme === expected.scheme &&
     candidate.maxTimeoutSeconds === expected.maxTimeoutSeconds
-
   );
 }
 
