@@ -44,3 +44,20 @@ The example does not prefer one until the maintainer confirms the intended bound
 ## Safety and scope
 
 This is testnet-oriented experimental code. It is not part of the package export, does not enable mainnet, does not publish anything to npm, and does not claim production readiness.
+
+## Replay finding from the current upstream facilitator
+
+The current upstream facilitator documents `/settle` as using the same replay,
+idempotency and atomic commit path as direct paid requests. Its test suite also
+shows that an exact `/verify` performed after settlement can return
+`invalid_transaction_state` for replayed transaction evidence.
+
+That creates an important seller-flow question for an EmDash adapter: blindly
+calling `/verify` before `/settle` on every identical retry can prevent the retry
+from reaching the facilitator settlement path that owns the cached/idempotent
+result. The experimental test suite captures this behavior explicitly.
+
+This is not treated as an upstream bug. It is a boundary question: a final
+facilitator-backed seller flow may need either a replay-aware verification
+contract or to rely on authenticated `/settle` as the mutating operation that
+also performs validation. The example does not choose that policy yet.

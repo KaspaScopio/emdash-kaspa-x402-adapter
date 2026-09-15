@@ -235,3 +235,31 @@ describe("experimental facilitator HTTP transport", () => {
     expect(fetchSpy.mock.calls[2]?.[0]).toBe("https://facilitator.example/settle");
   });
 });
+
+
+describe("facilitator replay semantics", () => {
+  it("shows why verify-before-settle needs care on an identical completed retry", async () => {
+    let verifies = 0;
+    const mockTransport = transport({
+      verify: vi.fn(async () => {
+        verifies += 1;
+        return verifies === 1
+          ? { isValid: true, payer: "kaspatest:payer" }
+          : { isValid: false, invalidReason: "invalid_transaction_state" };
+      }),
+    });
+    const candidate = backend(mockTransport);
+    const paidRequest = () =>
+      new Request(resourceUrl, {
+        headers: { "PAYMENT-SIGNATURE": paymentHeader() },
+      });
+
+    await expect(candidate.enforce(paidRequest(), context)).resolves.toMatchObject({
+      paid: true,
+    });
+    await expect(candidate.enforce(paidRequest(), context)).rejects.toThrow(
+      "invalid_transaction_state",
+    );
+    expect(mockTransport.settle).toHaveBeenCalledTimes(1);
+  });
+});
