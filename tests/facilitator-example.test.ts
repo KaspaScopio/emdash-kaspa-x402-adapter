@@ -374,3 +374,24 @@ describe("facilitator response validation", () => {
     await expect(client.settle({ example: true })).rejects.toThrow("invalid /settle JSON");
   });
 });
+
+
+describe("facilitator response shape details", () => {
+  it("rejects malformed signer lists from /supported", async () => {
+    const client = createFacilitatorHttpTransport(
+      "https://facilitator.example",
+      vi.fn(async () =>
+        Response.json({ kinds: [], extensions: [], signers: { exact: "bad" } }),
+      ) as unknown as typeof fetch,
+    );
+    await expect(client.supported()).rejects.toThrow("invalid /supported JSON");
+  });
+
+  it("rejects a non-string payer from /verify", async () => {
+    const client = createFacilitatorHttpTransport(
+      "https://facilitator.example",
+      vi.fn(async () => Response.json({ isValid: true, payer: 123 })) as unknown as typeof fetch,
+    );
+    await expect(client.verify({ example: true })).rejects.toThrow("invalid /verify JSON");
+  });
+});

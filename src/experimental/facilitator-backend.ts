@@ -389,15 +389,25 @@ function supportedResponse(value: unknown): FacilitatorSupportedResponse {
   if (!isRecord(value) || !Array.isArray(value.kinds)) {
     throw new Error("Kaspa x402 facilitator returned invalid /supported JSON");
   }
-  if (!Array.isArray(value.extensions) || !isRecord(value.signers)) {
+  if (
+    !Array.isArray(value.extensions) ||
+    !value.extensions.every((entry) => typeof entry === "string") ||
+    !isRecord(value.signers) ||
+    !Object.values(value.signers).every(
+      (entries) =>
+        Array.isArray(entries) &&
+        entries.every((entry) => typeof entry === "string"),
+    )
+  ) {
     throw new Error("Kaspa x402 facilitator returned invalid /supported JSON");
   }
   for (const kind of value.kinds) {
     if (
       !isRecord(kind) ||
-      typeof kind.x402Version !== "number" ||
+      kind.x402Version !== 2 ||
       typeof kind.scheme !== "string" ||
-      typeof kind.network !== "string"
+      typeof kind.network !== "string" ||
+      (kind.extra !== undefined && !isRecord(kind.extra))
     ) {
       throw new Error("Kaspa x402 facilitator returned invalid /supported JSON");
     }
@@ -409,7 +419,11 @@ function verifyResponse(value: unknown): FacilitatorVerifyResponse {
   if (!isRecord(value) || typeof value.isValid !== "boolean") {
     throw new Error("Kaspa x402 facilitator returned invalid /verify JSON");
   }
-  if (value.invalidReason !== undefined && typeof value.invalidReason !== "string") {
+  if (
+    (value.invalidReason !== undefined && typeof value.invalidReason !== "string") ||
+    (value.payer !== undefined && typeof value.payer !== "string") ||
+    (value.extra !== undefined && !isRecord(value.extra))
+  ) {
     throw new Error("Kaspa x402 facilitator returned invalid /verify JSON");
   }
   return value as FacilitatorVerifyResponse;
