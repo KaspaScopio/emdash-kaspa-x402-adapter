@@ -276,29 +276,22 @@ describe("experimental facilitator HTTP transport", () => {
 
 
 describe("facilitator replay semantics", () => {
-  it("shows why verify-before-settle needs care on an identical completed retry", async () => {
-    let verifies = 0;
+  it("stops before settlement when verification rejects conflicting replay evidence", async () => {
     const mockTransport = transport({
-      verify: vi.fn(async () => {
-        verifies += 1;
-        return verifies === 1
-          ? { isValid: true, payer: "kaspatest:payer" }
-          : { isValid: false, invalidReason: "invalid_transaction_state" };
-      }),
+      verify: vi.fn(async () => ({
+        isValid: false,
+        invalidReason: "invalid_transaction_state",
+      })),
     });
     const candidate = backend(mockTransport);
-    const paidRequest = () =>
-      new Request(resourceUrl, {
-        headers: { "PAYMENT-SIGNATURE": paymentHeader() },
-      });
-
-    await expect(candidate.enforce(paidRequest(), context)).resolves.toMatchObject({
-      paid: true,
+    const paidRequest = new Request(resourceUrl, {
+      headers: { "PAYMENT-SIGNATURE": paymentHeader() },
     });
-    await expect(candidate.enforce(paidRequest(), context)).rejects.toThrow(
+
+    await expect(candidate.enforce(paidRequest, context)).rejects.toThrow(
       "invalid_transaction_state",
     );
-    expect(mockTransport.settle).toHaveBeenCalledTimes(1);
+    expect(mockTransport.settle).not.toHaveBeenCalled();
   });
 });
 

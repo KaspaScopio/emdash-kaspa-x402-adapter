@@ -50,19 +50,22 @@ This is testnet-oriented experimental code. It is not part of the package export
 ## Replay finding from the current upstream facilitator
 
 The current upstream facilitator documents `/settle` as using the same replay,
-idempotency and atomic commit path as direct paid requests. Its test suite also
-shows that an exact `/verify` performed after settlement can return
-`invalid_transaction_state` for replayed transaction evidence.
+idempotency and atomic commit path as direct paid requests. A disposable harness
+using the real `DirectModeServer`, `DirectModeFacilitator` and router confirmed
+that an **identical** completed retry remains valid: the same payment, request
+hash and requirements passed `/verify` again and `/settle` returned the same
+settlement result.
 
-That creates an important seller-flow question for an EmDash adapter: blindly
-calling `/verify` before `/settle` on every identical retry can prevent the retry
-from reaching the facilitator settlement path that owns the cached/idempotent
-result. The experimental test suite captures this behavior explicitly.
+The upstream replay test that returns `invalid_transaction_state` changes the
+request hash before the second verification. That is a conflicting reuse of the
+same exact transaction, not an identical retry. The experimental adapter should
+therefore preserve this distinction: identical retries may proceed to the
+idempotent settlement path, while a facilitator verification failure for a
+conflicting replay must stop before settlement.
 
-This is not treated as an upstream bug. It is a boundary question: a final
-facilitator-backed seller flow may need either a replay-aware verification
-contract or to rely on authenticated `/settle` as the mutating operation that
-also performs validation. The example does not choose that policy yet.
+This corrects the earlier, broader interpretation that verify-before-settle
+could block an identical retry. No facilitator API change is required by this
+finding.
 
 ## Failure boundary
 
