@@ -37,6 +37,10 @@ Release preparation is tracked in [`RELEASE_CHECKLIST.md`](./RELEASE_CHECKLIST.m
 
 The package deliberately does **not** construct a production `DirectModeServer` for you. Stores, chain providers, verifiers, finality policy, keys, and deployment security remain application responsibilities.
 
+See [`DEPLOYMENT.md`](./DEPLOYMENT.md) for server lifecycle recovery, durable-state, cross-instance locking, and replay requirements. A failed or aborted lazy `serverFactory` initialization is discarded so a later request can retry safely.
+
+The upstream self-hosted facilitator is being tracked separately in [`FACILITATOR_EXPLORATION.md`](./FACILITATOR_EXPLORATION.md). It remains optional and does not replace the validated direct-mode path.
+
 ## Astro configuration
 
 ```js
@@ -66,7 +70,7 @@ export default defineConfig({
   ],
 });
 ```
-The injected `serverFactory` may return a server directly or a promise. It is resolved lazily once, on the first enforced request. The returned object must expose `handlePaidRequest()` compatible with Kaspa x402 `DirectModeServer`.
+The injected `serverFactory` may return a server directly or a promise. Successful initialization is shared lazily per adapter instance. Concurrent first requests share one initialization attempt; if that attempt fails or is aborted, it is discarded so a later request can retry. The returned object must expose `handlePaidRequest()` compatible with Kaspa x402 `DirectModeServer`.
 
 `createKaspaX402BackendFromServer(server, options)` remains available when an application already owns a server instance.
 

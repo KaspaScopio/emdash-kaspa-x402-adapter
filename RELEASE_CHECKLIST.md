@@ -5,8 +5,10 @@ This checklist prepares a future `0.1.0` source/npm release. It is not an author
 ## Upstream alignment
 
 - [ ] EmDash maintainers confirm the desired pluggable-backend boundary.
-- [ ] Kaspa x402 maintainers confirm `DirectModeServer.handlePaidRequest()` as an appropriate framework-adapter seam.
-- [ ] Resolve any requested API/lifecycle/replay changes before tagging.
+- [x] Kaspa x402 maintainer confirmed `DirectModeServer.handlePaidRequest()` as the intended public direct-integration seam (issue #15).
+- [ ] Resolve any remaining requested API/lifecycle/replay changes before tagging.
+- [x] Lazy initialization recovers after failure or cancellation and remains single-flight under concurrency.
+- [x] Durable-state, shared-lock, replay, and recovery deployment requirements are documented.
 
 ## Compatibility and safety
 

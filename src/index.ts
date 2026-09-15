@@ -91,11 +91,19 @@ export function createKaspaX402Backend(
 
   let backendPromise: Promise<X402Backend> | undefined;
   const resolveBackend = (): Promise<X402Backend> => {
-    backendPromise ??= Promise.resolve(
-      server ? server : serverFactory!(serverOptions),
-    ).then((resolvedServer) =>
-      createKaspaX402BackendFromServer(resolvedServer, backendOptions),
-    );
+    if (!backendPromise) {
+      const initialization = Promise.resolve(
+        server ? server : serverFactory!(serverOptions),
+      )
+        .then((resolvedServer) =>
+          createKaspaX402BackendFromServer(resolvedServer, backendOptions),
+        )
+        .catch((error) => {
+          if (backendPromise === initialization) backendPromise = undefined;
+          throw error;
+        });
+      backendPromise = initialization;
+    }
     return backendPromise;
   };
 
