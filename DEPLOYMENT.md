@@ -17,6 +17,7 @@ Production deployments should use a durable `ServerStateStore` with the guarante
 In-memory stores are suitable only for tests and examples. A restart must not make a completed or uncertain payment appear new again.
 
 The application that builds the `DirectModeServer` is responsible for choosing and configuring the durable store.
+
 ## Coordination across instances
 
 If multiple processes or isolates can accept the same payment trust domain, they must use a shared `ChannelLockManager` (or an equivalent implementation of the upstream contract) in the same coordination domain as the durable store.

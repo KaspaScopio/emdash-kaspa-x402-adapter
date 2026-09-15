@@ -110,7 +110,7 @@ Mainnet is rejected unless `allowMainnet: true` is explicitly passed to the back
 
 ## Technical review
 
-Feedback is very welcome, especially on whether this overlaps planned work, how the server lifecycle should be handled, replay/idempotency expectations, and which pieces (if any) would be better upstream in EmDash or Kaspa x402.
+Feedback is very welcome. Kaspa x402 has confirmed `DirectModeServer.handlePaidRequest()` as the intended direct-integration entry point and clarified lifecycle/replay expectations. The remaining upstream question is primarily the EmDash pluggable-backend boundary, plus whether a future facilitator-backed path should be explored as an additive option.
 
 Current review threads:
 

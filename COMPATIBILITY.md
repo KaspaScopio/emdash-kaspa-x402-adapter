@@ -1,6 +1,6 @@
 # Compatibility matrix
 
-Validated on 2026-09-14.
+Validated through 2026-09-15.
 
 | Surface | Status | Evidence |
 | --- | --- | --- |

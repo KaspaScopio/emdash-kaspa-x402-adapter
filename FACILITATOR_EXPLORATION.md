@@ -16,6 +16,7 @@ The current upstream implementation also reuses the same replay, idempotency, an
 - `POST /verify` for read-only payment validation.
 - `POST /settle` for settlement.
 - Exact requests require the resource server's independently computed `requestHash`.
+
 ## Proposed EmDash direction
 
 Keep `DirectModeServer.handlePaidRequest()` as the current supported integration boundary. Add facilitator support later as an alternative backend, not as a breaking replacement.
