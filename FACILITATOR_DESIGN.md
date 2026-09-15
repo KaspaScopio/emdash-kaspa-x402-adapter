@@ -1,6 +1,6 @@
 # Experimental facilitator-backed EmDash design
 
-Status: design only. This document does not change the production adapter API and does not add `@kaspa-x402/facilitator` as a dependency.
+Status: experimental design plus a small isolated example. This does not change the production adapter API and does not add `@kaspa-x402/facilitator` as a dependency.
 
 ## Goal
 
@@ -53,8 +53,8 @@ The direct backend remains the reference path until the facilitator surface is s
 
 The two modes should share conformance tests for: term matching, malformed payment rejection, mainnet guardrails, replay behavior, successful settlement headers and failure/cancellation paths.
 
-## Implementation gate
+## Experimental implementation gate
 
-Before writing runtime code, confirm with upstream which client/request helpers are intended to be stable after v1, whether framework sellers should explicitly call `/verify` then `/settle`, and what authentication contract is expected for settlement callers.
+Upstream explicitly invited a small facilitator example without waiting for the whole API to settle. The example in `src/experimental/` therefore stays isolated from the package export and focuses on one concrete integration gap: obtaining authoritative dynamic `PaymentRequirements` for the initial `402` and recovering the same requirements for the paid request.
 
-No npm release, mainnet enablement or upstream EmDash API change is implied by this experiment.
+The experiment still does not assume a stable facilitator package API. No npm release, mainnet enablement or upstream EmDash API change is implied.
