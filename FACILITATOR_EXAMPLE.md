@@ -61,3 +61,13 @@ This is not treated as an upstream bug. It is a boundary question: a final
 facilitator-backed seller flow may need either a replay-aware verification
 contract or to rely on authenticated `/settle` as the mutating operation that
 also performs validation. The example does not choose that policy yet.
+
+## Failure boundary
+
+The experimental transport intentionally performs no automatic retries.
+
+- `/supported` failure is fail-closed and cannot widen capability.
+- `/verify` transport failure cannot fall through to `/settle`.
+- `/settle` transport failure is treated as an uncertain outcome; the adapter does not blindly issue a second settlement request.
+
+This is deliberately conservative. Any future retry policy should depend on an explicit facilitator idempotency/recovery contract rather than generic HTTP retry behavior.

@@ -263,3 +263,51 @@ describe("facilitator replay semantics", () => {
     expect(mockTransport.settle).toHaveBeenCalledTimes(1);
   });
 });
+
+
+describe("experimental facilitator failure boundaries", () => {
+  it("fails closed when /supported is unavailable", async () => {
+    const supported = vi.fn(async () => {
+      throw new Error("facilitator unavailable");
+    });
+    const mockTransport = transport({ supported });
+
+    await expect(
+      backend(mockTransport).enforce(new Request(resourceUrl), context),
+    ).rejects.toThrow("facilitator unavailable");
+    expect(supported).toHaveBeenCalledTimes(1);
+    expect(mockTransport.verify).not.toHaveBeenCalled();
+    expect(mockTransport.settle).not.toHaveBeenCalled();
+  });
+
+  it("does not retry verification transport failures", async () => {
+    const verify = vi.fn(async () => {
+      throw new Error("verify transport failed");
+    });
+    const mockTransport = transport({ verify });
+    const request = new Request(resourceUrl, {
+      headers: { "PAYMENT-SIGNATURE": paymentHeader() },
+    });
+
+    await expect(backend(mockTransport).enforce(request, context)).rejects.toThrow(
+      "verify transport failed",
+    );
+    expect(verify).toHaveBeenCalledTimes(1);
+    expect(mockTransport.settle).not.toHaveBeenCalled();
+  });
+  it("does not blindly retry an uncertain settlement failure", async () => {
+    const settle = vi.fn(async () => {
+      throw new DOMException("settlement timed out", "AbortError");
+    });
+    const mockTransport = transport({ settle });
+    const request = new Request(resourceUrl, {
+      headers: { "PAYMENT-SIGNATURE": paymentHeader() },
+    });
+
+    await expect(backend(mockTransport).enforce(request, context)).rejects.toThrow(
+      "settlement timed out",
+    );
+    expect(mockTransport.verify).toHaveBeenCalledTimes(1);
+    expect(settle).toHaveBeenCalledTimes(1);
+  });
+});
