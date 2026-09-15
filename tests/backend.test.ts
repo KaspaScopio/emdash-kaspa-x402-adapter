@@ -247,6 +247,72 @@ describe("Kaspa x402 backend hardening", () => {
     expect(handlePaidRequest).toHaveBeenCalledTimes(20);
   });
 
+  it("retries serverFactory after a failed initialization", async () => {
+    const handlePaidRequest = vi.fn(async (request) => serverResponse(request));
+    const serverFactory = vi
+      .fn()
+      .mockRejectedValueOnce(new Error("temporary init failure"))
+      .mockResolvedValue({ handlePaidRequest });
+    const backend = createKaspaX402Backend({ serverFactory });
+
+    await expect(
+      backend.enforce(new Request(resourceUrl), context()),
+    ).rejects.toThrow("temporary init failure");
+
+    const result = await backend.enforce(new Request(resourceUrl), context());
+    expect(result).toBeInstanceOf(Response);
+    expect(serverFactory).toHaveBeenCalledTimes(2);
+  });
+
+  it("retries serverFactory after an aborted initialization", async () => {
+    const handlePaidRequest = vi.fn(async (request) => serverResponse(request));
+    const serverFactory = vi
+      .fn()
+      .mockRejectedValueOnce(new DOMException("aborted", "AbortError"))
+      .mockResolvedValue({ handlePaidRequest });
+    const backend = createKaspaX402Backend({ serverFactory });
+
+    await expect(
+      backend.enforce(new Request(resourceUrl), context()),
+    ).rejects.toMatchObject({ name: "AbortError" });
+
+    const result = await backend.enforce(new Request(resourceUrl), context());
+    expect(result).toBeInstanceOf(Response);
+    expect(serverFactory).toHaveBeenCalledTimes(2);
+  });
+
+  it("shares a concurrent failed initialization, then recovers once", async () => {
+    let rejectFirst!: (error: Error) => void;
+    const firstAttempt = new Promise<never>((_resolve, reject) => {
+      rejectFirst = reject;
+    });
+    const handlePaidRequest = vi.fn(async (request) => serverResponse(request));
+    const serverFactory = vi
+      .fn()
+      .mockImplementationOnce(() => firstAttempt)
+      .mockResolvedValue({ handlePaidRequest });
+    const backend = createKaspaX402Backend({ serverFactory });
+
+    const firstWave = Array.from({ length: 20 }, () =>
+      backend.enforce(new Request(resourceUrl), context()),
+    );
+    await Promise.resolve();
+    expect(serverFactory).toHaveBeenCalledOnce();
+    rejectFirst(new Error("cancelled initialization"));
+    const settled = await Promise.allSettled(firstWave);
+    expect(settled.every((result) => result.status === "rejected")).toBe(true);
+    expect(serverFactory).toHaveBeenCalledOnce();
+
+    const secondWave = await Promise.all(
+      Array.from({ length: 20 }, () =>
+        backend.enforce(new Request(resourceUrl), context()),
+      ),
+    );
+    expect(secondWave).toHaveLength(20);
+    expect(serverFactory).toHaveBeenCalledTimes(2);
+    expect(handlePaidRequest).toHaveBeenCalledTimes(20);
+  });
+
   it("fails closed on a malformed PAYMENT-SIGNATURE", async () => {
     const handlePaidRequest = vi.fn(async (request) => serverResponse(request));
     const backend = createKaspaX402BackendFromServer({ handlePaidRequest });
