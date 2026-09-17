@@ -170,6 +170,15 @@ export function createExperimentalKaspaFacilitatorBackend(
           `Kaspa x402 facilitator settlement failed: ${settlement.errorReason ?? "unknown"}`,
         );
       }
+      if (
+        verification.payer !== undefined &&
+        settlement.payer !== undefined &&
+        verification.payer !== settlement.payer
+      ) {
+        throw new Error(
+          "Kaspa x402 facilitator verify/settle payer mismatch",
+        );
+      }
       return {
         paid: true,
         skipped: false,

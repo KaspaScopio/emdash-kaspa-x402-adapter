@@ -16,7 +16,7 @@ The resource server must derive its own request hash for exact payments. It must
 
 1. `createKaspaFacilitatorBackend(options)` implementing the same structural `X402Backend` contract.
 2. A small transport interface for `supported()`, `verify()` and `settle()` so HTTP details are testable independently.
-3. A capability cache with bounded lifetime and fail-closed refresh behavior.
+3. A future capability cache with bounded lifetime and fail-closed refresh behavior. The current isolated example deliberately calls `/supported` for each request and does not implement this cache yet.
 4. Explicit settlement authentication supplied by the deployment, never embedded in public adapter configuration.
 
 ## Request flow
@@ -24,7 +24,7 @@ The resource server must derive its own request hash for exact payments. It must
 Unpaid request:
 
 1. Validate EmDash terms locally and keep mainnet disabled unless explicitly allowed.
-2. Check cached `/supported` capabilities; refresh when stale.
+2. Check `/supported` capabilities. A future production backend may cache them with bounded lifetime and fail-closed refresh behavior; the current example does not.
 3. If the required Kaspa scheme/network is unsupported, fail before protected work.
 4. Return the normal x402 `402` challenge expected by EmDash.
 

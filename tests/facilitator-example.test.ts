@@ -280,7 +280,48 @@ describe("experimental facilitator HTTP transport", () => {
 });
 
 
+describe("facilitator payer consistency", () => {
+  it("rejects contradictory verify and settle payer identities", async () => {
+    const mockTransport = transport({
+      verify: vi.fn(async () => ({ isValid: true, payer: "kaspatest:verify-payer" })),
+      settle: vi.fn(async () => ({
+        success: true,
+        transaction: "aa".repeat(32),
+        network: "kaspa:testnet-10",
+        amount: "20000000",
+        payer: "kaspatest:settle-payer",
+      })),
+    });
+    const request = new Request(resourceUrl, {
+      headers: { "PAYMENT-SIGNATURE": paymentHeader() },
+    });
+
+    await expect(backend(mockTransport).enforce(request, context)).rejects.toThrow(
+      "verify/settle payer mismatch",
+    );
+  });
+});
+
 describe("facilitator replay semantics", () => {
+  it("allows an identical completed retry to reach idempotent settlement again", async () => {
+    const mockTransport = transport();
+    const candidate = backend(mockTransport);
+    const paidRequest = new Request(resourceUrl, {
+      headers: { "PAYMENT-SIGNATURE": paymentHeader() },
+    });
+
+    const first = await candidate.enforce(paidRequest, context);
+    const second = await candidate.enforce(paidRequest, context);
+    expect(first).not.toBeInstanceOf(Response);
+    expect(second).not.toBeInstanceOf(Response);
+    expect(mockTransport.verify).toHaveBeenCalledTimes(2);
+    expect(mockTransport.settle).toHaveBeenCalledTimes(2);
+    if (first instanceof Response || second instanceof Response) {
+      throw new Error("expected paid facilitator results");
+    }
+    expect(second.settlement).toEqual(first.settlement);
+  });
+
   it("stops before settlement when verification rejects conflicting replay evidence", async () => {
     const mockTransport = transport({
       verify: vi.fn(async () => ({
