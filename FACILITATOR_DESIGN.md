@@ -58,3 +58,28 @@ The two modes should share conformance tests for: term matching, malformed payme
 Upstream explicitly invited a small facilitator example without waiting for the whole API to settle. The example in `src/experimental/` therefore stays isolated from the package export and focuses on one concrete integration gap: obtaining authoritative dynamic `PaymentRequirements` for the initial `402` and recovering the same requirements for the paid request.
 
 The experiment still does not assume a stable facilitator package API. No npm release, mainnet enablement or upstream EmDash API change is implied.
+
+## Replay-safe framework boundary
+
+The RC2 probe narrows the missing integration primitive to the framework side. The
+payment gate cannot make arbitrary page/action work replay-safe after it returns.
+A future EmDash integration should therefore expose a wrapper around the protected
+operation, conceptually `executePaid(request, options, action)`, rather than trying
+to solve action replay inside `enforce()`.
+
+Required semantics:
+
+1. Derive the authoritative payment requirements and resource request hash before settlement.
+2. Settle using the facilitator's normal idempotent RC2 path.
+3. Use a durable replay key bound to the payment/request identity, not a process-local cache.
+4. Elect one owner for the protected action; concurrent identical retries wait for that owner.
+5. Persist the completed protected response before releasing waiters.
+6. Completed identical retries return the stored response and settlement without running the action again.
+7. If the action fails, persist an explicit failure policy/state; never silently convert an uncertain execution into a fresh action run.
+8. Expiry/retention must be at least as strict as the payment replay window and deployment policy.
+
+The storage/locking primitive belongs to the framework/application deployment (or to
+an explicitly shared durable adapter supplied by it). The remote facilitator cannot
+persist an arbitrary EmDash page/action response because it does not execute that
+work. This also means an in-memory `Map` would only make a single-process demo look
+correct and is not an acceptable production fix.
