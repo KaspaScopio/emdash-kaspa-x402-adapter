@@ -36,7 +36,7 @@ Paid request:
 4. Only after successful settlement may protected work run.
 5. Return `PAYMENT-RESPONSE` from the successful settlement response.
 
-No protected callback may be executed twice for an identical completed retry. Replay and idempotency semantics must remain consistent with the direct-mode path.
+No protected callback may be executed twice for an identical completed retry. The 2026-10-01 RC2 integration probe showed that the current `enforce()`-only boundary cannot guarantee this: settlement is idempotent, but a caller that executes protected work after each successful gate runs that work twice. Facilitator support therefore remains blocked on a framework-level replay mechanism or a backend boundary that wraps the protected action.
 
 ## Failure and recovery rules
 

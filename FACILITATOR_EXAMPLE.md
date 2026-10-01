@@ -133,3 +133,25 @@ retry. The experiment therefore continues to isolate that responsibility behind
 ## Maintainer guidance after RC2
 
 Upstream clarified that standard-native fixed-price requirements stay with the resource server, with a shared construction helper planned after v1. PR #5 therefore remains experimental. The facilitator-backed example follows x402 upfront semantics: it calls `/settle` directly before protected work and does not make a separate `/verify` call. Identical paid retries may reach the facilitator settlement path again; correctness relies on RC2 idempotent settlement. The adapter `enforce()` method is only the payment gate, so proving that an EmDash protected action itself executes once requires an integration harness above this backend boundary.
+
+## RC2 full-flow replay probe (2026-10-01)
+
+A disposable integration probe was run against the exact upstream RC2 tag
+`v1.0.0-rc.2` (`724c5fff22de500fcf729c43b59d25036fbffa9c`). It used the real
+`DirectModeFacilitator`, real `handleFacilitatorRequest()` `/supported` and `/settle`
+routes, the RC2 standard-native exact-payment fixture, and this experimental backend.
+The upstream facilitator suite plus the probe passed 37/37.
+
+The result exposes an important boundary rather than closing the task: an identical
+paid retry reaches RC2 settlement idempotently and returns the same settlement, but
+the current structural EmDash `enforce()` contract only gates access. If the caller
+runs the protected action after each successful `enforce()`, the identical retry runs
+that action a second time. The probe observed exactly two action executions for two
+identical paid requests.
+
+Therefore PR #5 must remain experimental. Settlement idempotency is not sufficient
+to claim EmDash action idempotency. Supporting the facilitator path safely requires
+either a framework-level response/action replay mechanism keyed to the paid request,
+or a backend boundary that wraps the actual protected action so replay can return the
+previous completed result. This experiment will not add an in-process cache and call
+it solved, because that would not provide correctness across processes or isolates.

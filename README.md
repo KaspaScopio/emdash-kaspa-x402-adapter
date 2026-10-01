@@ -10,7 +10,7 @@ This repository is maintained by KaspaScopio. It is not an official EmDash or Ka
 
 ## Upstream status
 
-The adapter itself is implemented and TN10-validated, but the full Astro configuration shown below depends on a **pending EmDash extension for pluggable x402 backends and statically injected backend options**. As of 2026-09-14, those changes are not present on EmDash upstream `main`.
+The adapter itself is implemented and TN10-validated, but the full Astro configuration shown below depends on a **pending EmDash extension for pluggable x402 backends and statically injected backend options**. As of 2026-10-01, EmDash upstream `main` includes its own `@emdash-cms/x402` enforcer, but it does not expose the pluggable external-backend boundary used by this adapter prototype.
 
 We are publishing the adapter first so maintainers can review the approach before we propose upstream changes. For now, the example below depends on our prototype EmDash extension and is not supported by stock `@emdash-cms/x402` yet.
 
@@ -21,7 +21,7 @@ The npm package is intentionally marked `private` for now; public source review 
 - EmDash external backend loading through Astro/Vite static imports.
 - Kaspa `exact` payments on `kaspa:testnet-10`.
 - HTTP flow: `402 → payment → verify/settle → 200`.
-- Identical-payment replay returns the same settlement without re-running protected work.
+- Direct-mode identical-payment replay returns the same settlement through the Kaspa server callback. The separate EmDash page/action replay boundary is not yet proven and must not be inferred from settlement idempotency alone.
 - Real TN10 settlement observed on-chain.
 
 Latest maintained proof transaction:
