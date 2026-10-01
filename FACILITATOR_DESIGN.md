@@ -1,136 +1,124 @@
 # Experimental facilitator-backed EmDash design
 
-Status: experimental design plus a small isolated example and prototype framework boundary. Not production-ready. This does not change the production adapter API and does not add `@kaspa-x402/facilitator` as a dependency.
+Status: experimental. The backend and action executor are source-only prototypes;
+neither is a package export. No production coordinator or stock EmDash integration
+is provided. The public direct-server adapter API remains unchanged.
 
-## Goal
+## Ownership and payment flow
 
-Provide an optional EmDash backend that talks to a Kaspa x402 facilitator over HTTP while preserving the existing EmDash backend contract and keeping direct `DirectModeServer.handlePaidRequest()` integration valid.
+The resource server owns route policy, price, recipient, timeout, authoritative
+PaymentRequirements and the independently derived request hash. The facilitator
+owns capability discovery and settlement. Client `accepted` terms are an untrusted
+lookup hint, never the requirements authority.
 
-## Boundary
+The backend snapshots its Request and context before asynchronous work. It checks
+`/supported` for x402 v2, exact, the selected network and an advertised settle mode,
+considering every matching entry. Other advertised protocol versions are tolerated.
 
-EmDash remains responsible for route policy, price, resource URL, method and timeout. The facilitator is responsible for capability discovery and settlement.
+An unpaid request obtains requirements from the deployment provider and returns
+402 with PAYMENT-REQUIRED. A paid request validates its signature, recovers the
+authoritative requirements, compares them in full, derives the server request hash
+and calls `/settle` directly. There is no separate `/verify` request.
 
-The resource server must derive its own request hash for exact payments. It must not trust a request hash supplied by the payment artifact.
+Protected work waits for successful settlement. The backend validates the response
+schema and matches network and amount to the authoritative terms. Supplied Kaspa
+request-hash, output-index, profile, encoding and finality metadata must also match. This detects
+inconsistent responses; it does not independently prove chain settlement or remove
+the deployment's trust in its facilitator.
 
-## Proposed components
+Discovery, requirements, decoding, transport or settlement failures stop before
+protected work. There are no automatic transport retries. Mainnet is disabled
+unless explicitly enabled.
 
-1. `createKaspaFacilitatorBackend(options)` implementing the same structural `X402Backend` contract.
-2. A small transport interface for `supported()` and `settle()` so HTTP details are testable independently.
-3. A future capability cache with bounded lifetime and fail-closed refresh behavior. The current isolated example deliberately calls `/supported` for each request and does not implement this cache yet.
-4. Explicit settlement authentication supplied by the deployment, never embedded in public adapter configuration.
+## Host action boundary
 
-## Request flow
+`enforce()` only returns a payment gate. Work performed after each successful gate
+can execute twice even when the facilitator returns the same settlement.
+`createExperimentalPaidActionExecutor({ backend, replayCoordinator, operationId })`
+wraps the actual operation and uses `runOnce(key, action)` for paid results.
 
-Unpaid request:
+All protected side effects must be inside that callback. Any enforcement Response
+passes through without action execution; thrown enforcement errors propagate.
+Successful unpaid/skipped results run directly. The executor snapshots Request and
+context independently for enforcement, key derivation and the protected callback.
+The callback receives (enforcement, { request, context }); use that captured input
+instead of closing over mutable caller objects. It does not merge headers
+or serialize action results; the callback must return a record that the coordinator
+can durably reconstruct.
 
-1. Validate EmDash terms locally and keep mainnet disabled unless explicitly allowed.
-2. Check `/supported` capabilities. A future production backend may cache them with bounded lifetime and fail-closed refresh behavior; the current example does not.
-3. If the required Kaspa scheme/network is unsupported, fail before protected work.
-4. Return the normal x402 `402` challenge expected by EmDash.
+## Default identity policy
 
-Paid request:
+The default policy requires a stable deployment-owned `operationId`. Two different
+host operations must have different namespaces even if they share a route. A custom
+`replayKeyProvider` replaces this policy and owns equivalent identity validation.
 
-1. Decode and validate `PAYMENT-SIGNATURE` against the EmDash terms.
-2. Derive the resource request hash locally.
-3. Call `/settle` with payment payload, requirements, resource metadata and the derived hash. Settlement is the upfront payment gate.
-4. Only after successful settlement may protected work run.
-5. Return `PAYMENT-RESPONSE` from the successful settlement response.
+The lowercase SHA-256 key hashes UTF-8 stable JSON for this ordered tuple:
 
-No protected callback may be executed twice for an identical completed retry. The 2026-10-01 RC2 integration probe showed that the current `enforce()`-only boundary cannot guarantee this: settlement is idempotent, but a caller that executes protected work after each successful gate runs that work twice. The experimental action wrapper below prototypes the missing framework boundary; production support still requires deployment-owned durable coordination and recovery.
+`["emdash-kaspa-x402:protected-action-replay:v2", operationId, method, url, canonicalPayment, network, transaction, context, headers, bodyHash]`
 
-## Failure and recovery rules
+Object keys are sorted; array order is preserved. canonicalPayment is the validated
+PAYMENT-SIGNATURE decoded and re-encoded by core's canonical encoder. This coalesces
+JSON whitespace and object-key-order variants of the same valid payment. Transaction
+hex is lowercase. Network must match context. Missing or invalid payment/transaction
+identity fails closed.
 
-- `/supported` failure must not silently widen capability.
-- `/settle` failure must not trigger protected work.
-- `/settle` timeout or cancellation is an uncertain outcome: do not assume failure and retry blindly.
-- Transport retries need idempotency/replay evidence from the facilitator contract.
-- A facilitator URL, credentials and trust domain belong to deployment configuration, not package defaults.
-- Multiple EmDash instances sharing one facilitator rely on the facilitator/server durable store and coordinated locks for correctness.
+Context is the captured backend context. Headers are the Request-normalized
+name/value pairs sorted by name, excluding PAYMENT-SIGNATURE. bodyHash is SHA-256 of
+the exact body bytes. These inputs separate different bodies, tenants/authentication
+headers and route policies. The supplied Request must be cloneable and unread.
 
-## Compatibility strategy
+This is a conservative policy: changed incidental headers, URLs, context, body bytes
+or payment fields create different identities. It is not a universal "one action
+per transaction" guarantee. A deployment needing semantic equivalence across such
+changes must provide a canonical, authoritative operation policy. Do not remove
+tenant/body/policy binding merely to increase cache hits. This key does not replace
+the request hash authenticated during settlement.
 
-The direct backend remains the reference path until the facilitator surface is stable and published. A facilitator backend should be additive and selectable through the same pluggable EmDash backend mechanism.
+The v2 identity is incompatible with the earlier experimental v1 key. Deployments
+must not discard existing replay records to migrate a live system; migration and
+retention are deployment responsibilities. No supported production migration is
+claimed by this source-only experiment.
 
-The two modes should share conformance tests for: term matching, malformed payment rejection, mainnet guardrails, replay behavior, successful settlement headers and failure/cancellation paths.
+## Coordinator contract
 
-## Experimental implementation gate
+The deployment must reserve ownership atomically before calling action, coordinate
+all participating workers, make retries wait, persist completion before returning,
+and retain uncertain errors and crashes after possible side effects. Lock expiry
+must never automatically authorize another attempt. Retention must cover the
+payment replay window; reconciliation or transactional coupling is needed for
+cross-system side effects.
 
-Upstream explicitly invited a small facilitator example without waiting for the whole API to settle. The example in `src/experimental/` therefore stays isolated from the package export and focuses on one concrete integration gap: obtaining authoritative dynamic `PaymentRequirements` for the initial `402` and recovering the same requirements for the paid request.
+Only `tests/helpers/replay-coordinator.ts` implements a coordinator here. Its
+process-local state is explicitly test-only. It reserves a pending promise before
+invoking user code and retains uncertain failures, but proves neither distributed
+durability nor crash recovery. Losing that state permits another action execution.
 
-The experiment still does not assume a stable facilitator package API. No npm release, mainnet enablement or upstream EmDash API change is implied.
+## Reproducible RC2 evidence
 
-## Replay-safe framework boundary
+`npm run proof:facilitator-rc2` clones and pins
+`724c5fff22de500fcf729c43b59d25036fbffa9c`, checks the dereferenced
+`v1.0.0-rc.2` tag and core/server/facilitator package versions, then injects
+`scripts/fixtures/rc2-facilitator-proof.ts` into the upstream facilitator suite.
 
-The RC2 probe narrows the missing integration primitive to the framework side. The
-payment gate cannot make arbitrary page/action work replay-safe after it returns.
-`src/experimental/protected-action-replay.ts` now provides
-`createExperimentalPaidActionExecutor({ backend, replayCoordinator, replayKeyProvider? })`.
-It returns `executePaid(request, context, action)`, wrapping the actual protected
-operation while leaving `enforce()` and all public package exports unchanged.
+It uses the real DirectModeServer, DirectModeFacilitator and router with RC2's
+standard-native exact fixture. Requirements come from a separate call to the
+fixture server's `buildPaymentRequired()`, independently of the client-submitted
+`accepted` object. This does not prove construction without a local server.
+The request hash is derived from method, URL, body and tenant. The bridge
+records routes and verifies that no /verify request occurs. Stored page records
+include settlement and response headers, and materialize fresh Responses.
 
-Every invocation calls `backend.enforce()` first, including completed retries.
-Any returned `Response` passes through unchanged without action execution. Thrown
-enforcement/settlement errors propagate without action execution. Paid results go
-through `replayCoordinator.runOnce(key, action)`; successful unpaid/skipped results
-run the action directly. The action receives the enforcement result so its durable
-return value can include settlement metadata and response headers. The wrapper
-does not serialize results or merge headers on the application's behalf.
+The 36 upstream tests plus eight proof cases pass 44/44. Adapter tests pass 90/90.
+The proof covers sequential/concurrent retries, payment JSON recoding, mutation
+during settlement, 402/conflicting replay gating and retained uncertain failures.
+Two negative controls demonstrate duplicate work with an enforce-only host and
+after losing the local coordinator.
 
-The default key is the lowercase SHA-256 hex digest of UTF-8 JSON encoding of the
-fixed-order tuple
-`["emdash-kaspa-x402:protected-action-replay:v1", request.method, request.url, PAYMENT-SIGNATURE, enforcement.settlement.transaction]`.
-JSON string escaping makes field boundaries unambiguous; values are used exactly
-as exposed by `Request`. Missing, empty or non-string inputs fail closed before
-coordination or protected work. The default therefore requires structured settlement
-metadata; a backend exposing only a settlement header needs a deployment key provider.
+The bridge is in memory; chain, address and cryptographic verifier adapters come
+from the upstream test fixture. The action is a measured callback, not a deployed
+EmDash action. This is protocol/host-boundary evidence, not a funded TN10 proof.
 
-`replayKeyProvider({ request, context, enforcement })` can synchronously or
-asynchronously replace this policy with a stronger/shared operation identity. It
-must return a non-empty stable key and own equivalent identity validation. The
-default covers identical retries, not semantic equivalence across differently
-encoded payment signatures, changed URLs or different operations sharing a route.
-Deployments needing tenant/action namespaces, body binding or canonical payment
-identity must supply those through their key policy. This replay key is separate
-from the authoritative request hash validated during settlement.
-
-Required semantics:
-
-1. Derive the authoritative payment requirements and resource request hash before settlement.
-2. Settle using the facilitator's normal idempotent RC2 path.
-3. Use a durable replay key bound to the payment/request identity, not a process-local cache.
-4. Elect one owner for the protected action; concurrent identical retries wait for that owner.
-5. Persist the completed protected response before releasing waiters.
-6. Completed identical retries return the stored response and settlement without running the action again.
-7. If the action fails, persist an explicit failure policy/state; never silently convert an uncertain execution into a fresh action run.
-8. Expiry/retention must be at least as strict as the payment replay window and deployment policy.
-
-The storage/locking primitive belongs to the framework/application deployment (or to
-an explicitly shared durable adapter supplied by it). The remote facilitator cannot
-persist an arbitrary EmDash page/action response because it does not execute that
-work. This also means an in-memory `Map` would only make a single-process demo look
-correct and is not an acceptable production fix.
-
-The caller-supplied `ProtectedActionReplayCoordinator<T>` is a contract, not a
-storage implementation. It must durably and atomically coordinate all processes,
-including preserving an uncertain state if a worker crashes after a possible side
-effect but before persisting its result. Lock expiry alone must never authorize
-another attempt. Cross-system side effects need explicit reconciliation or a
-transactional application design; this wrapper cannot provide that itself.
-
-Strict test-only coordination demonstrates sequential/concurrent identical retries,
-distinct identities, settlement gating and retained uncertain action failures. It
-does not establish crash safety or distributed durability. No production in-memory
-coordinator is provided. PR #5 remains experimental and not production-ready;
-development checks pin `@kaspa-x402/core` exactly to `1.0.0-rc.2`.
-
-
-### RC2 proof of the wrapper
-
-The wrapper is exercised by unit/concurrency tests and by a reproducible disposable
-RC2 integration proof. `npm run proof:facilitator-rc2` checks out exact upstream
-commit `724c5fff22de500fcf729c43b59d25036fbffa9c`, runs the real
-`DirectModeFacilitator` and router, submits the identical paid request twice, and
-asserts both settlement responses are equal while the protected action runs once.
-The upstream facilitator suite plus the injected proof passes 37/37. The proof uses
-a test-only in-memory coordinator; it validates the boundary, not production
-durability.
+Current stock EmDash exposes an enforce gate and leaves protected rendering/work
+outside it. Production action-once needs a host/framework boundary plus durable
+coordination. Keep this PR experimental, as requested in
+[upstream issue #15](https://github.com/elldeeone/kaspa-x402/issues/15#issuecomment-5926474763).

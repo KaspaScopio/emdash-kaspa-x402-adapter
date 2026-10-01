@@ -85,6 +85,8 @@ export function createExperimentalKaspaFacilitatorBackend(
 
   return {
     async enforce(request, context) {
+      request = request.clone();
+      context = structuredClone(context);
       if (!allowedMethods.has(request.method.toUpperCase())) {
         return jsonResponse(
           405,
@@ -96,7 +98,9 @@ export function createExperimentalKaspaFacilitatorBackend(
       const terms = resolveTerms(context, options.allowMainnet);
       await assertFacilitatorSupports(options.transport, terms);
       const paymentHeader = request.headers.get(PAYMENT_SIGNATURE_HEADER);
-      let paymentPayload: ReturnType<typeof decodePaymentSignatureHeader> | undefined;
+      let paymentPayload:
+        | ReturnType<typeof decodePaymentSignatureHeader>
+        | undefined;
       if (paymentHeader) {
         try {
           paymentPayload = decodePaymentSignatureHeader(paymentHeader);
@@ -104,9 +108,9 @@ export function createExperimentalKaspaFacilitatorBackend(
           throw new Error("Kaspa x402 PAYMENT-SIGNATURE is invalid");
         }
       }
-      const submittedRequirements = paymentPayload?.accepted as
-        | unknown as JsonRecord
-        | undefined;
+      const submittedRequirements = paymentPayload
+        ? (structuredClone(paymentPayload.accepted) as unknown as JsonRecord)
+        : undefined;
       const paymentRequirements = await resolveAuthoritativeRequirements(
         options.paymentRequirementsProvider,
         request,
@@ -136,7 +140,10 @@ export function createExperimentalKaspaFacilitatorBackend(
           "Kaspa x402 payment terms do not match authoritative requirements",
         );
       }
-      const requestHash = await options.requestHashProvider({ request, context });
+      const requestHash = await options.requestHashProvider({
+        request,
+        context,
+      });
       if (!/^[0-9a-fA-F]{64}$/.test(requestHash)) {
         throw new Error(
           "Kaspa x402 exact facilitator requestHash must be 32-byte hex",
@@ -151,12 +158,15 @@ export function createExperimentalKaspaFacilitatorBackend(
         requestHash: requestHash.toLowerCase(),
       };
       // Settlement is the payment gate; protected work must wait for success.
-      const settlement = await options.transport.settle(facilitatorRequest);
+      const settlement = structuredClone(
+        await options.transport.settle(facilitatorRequest),
+      );
       if (!settlement.success) {
         throw new Error(
           `Kaspa x402 facilitator settlement failed: ${settlement.errorReason ?? "unknown"}`,
         );
       }
+      assertSettlementMatches(settlement, terms, requestHash, paymentPayload);
       return {
         paid: true,
         skipped: false,
@@ -176,7 +186,49 @@ export function createExperimentalKaspaFacilitatorBackend(
   };
 }
 
-function resourceInfo(request: Request, context: X402BackendContext): JsonRecord {
+function assertSettlementMatches(
+  settlement: FacilitatorSettleResponse,
+  terms: ResolvedTerms,
+  requestHash: string,
+  payment: ReturnType<typeof decodePaymentSignatureHeader>,
+): void {
+  if (
+    !validateSettlementResponse(settlement).ok ||
+    settlement.network !== terms.network ||
+    settlement.amount !== terms.amount
+  ) {
+    throw new Error("Kaspa x402 settlement does not match authoritative terms");
+  }
+  const metadata = settlement.extensions?.kaspa;
+  if (isRecord(metadata)) {
+    const payload = payment.payload as unknown as JsonRecord;
+    const requiredFinality = payment.accepted.extra.finality;
+    if (
+      (metadata.requestHash !== undefined &&
+        (typeof metadata.requestHash !== "string" ||
+          metadata.requestHash.toLowerCase() !== requestHash.toLowerCase())) ||
+      (metadata.paymentOutputIndex !== undefined &&
+        metadata.paymentOutputIndex !== payload.paymentOutputIndex) ||
+      (metadata.exactProfile !== undefined &&
+        metadata.exactProfile !== payload.profile) ||
+      (metadata.transactionEncoding !== undefined &&
+        metadata.transactionEncoding !== payload.transactionEncoding) ||
+      (metadata.finality !== undefined &&
+        ((requiredFinality === "confirmed" &&
+          metadata.finality !== "confirmed") ||
+          (requiredFinality === "accepted" && metadata.finality === "mempool")))
+    ) {
+      throw new Error(
+        "Kaspa x402 settlement metadata does not match paid request",
+      );
+    }
+  }
+}
+
+function resourceInfo(
+  request: Request,
+  context: X402BackendContext,
+): JsonRecord {
   return {
     url: request.url,
     ...(context.description ? { description: context.description } : {}),
@@ -188,19 +240,23 @@ async function assertFacilitatorSupports(
   terms: ResolvedTerms,
 ): Promise<void> {
   const supported = await transport.supported();
-  const match = supported.kinds.find(
+  const matches = supported.kinds.filter(
     (kind) =>
       kind.x402Version === 2 &&
       kind.scheme === terms.scheme &&
       kind.network === terms.network,
   );
-  if (!match) {
+  if (!matches.length) {
     throw new Error(
       `Kaspa x402 facilitator does not support ${terms.scheme} on ${terms.network}`,
     );
   }
-  const modes = match.extra?.modes;
-  if (!Array.isArray(modes) || !modes.includes("settle")) {
+  if (
+    !matches.some(
+      (kind) =>
+        Array.isArray(kind.extra?.modes) && kind.extra.modes.includes("settle"),
+    )
+  ) {
     throw new Error(
       `Kaspa x402 facilitator does not advertise settle for ${terms.scheme} on ${terms.network}`,
     );
@@ -214,11 +270,13 @@ async function resolveAuthoritativeRequirements(
   terms: ResolvedTerms,
   submittedRequirements?: JsonRecord,
 ): Promise<JsonRecord> {
-  const requirements = await provider({
-    request,
-    context,
-    ...(submittedRequirements ? { submittedRequirements } : {}),
-  });
+  const requirements = structuredClone(
+    await provider({
+      request,
+      context,
+      ...(submittedRequirements ? { submittedRequirements } : {}),
+    }),
+  );
   assertRequirementsMatch(requirements, terms);
   return requirements;
 }
@@ -239,7 +297,9 @@ function assertRequirementsMatch(
     );
   }
   if (!isRecord(requirements.extra)) {
-    throw new Error("Kaspa x402 authoritative requirements require extra metadata");
+    throw new Error(
+      "Kaspa x402 authoritative requirements require extra metadata",
+    );
   }
 }
 
@@ -382,12 +442,15 @@ function supportedResponse(value: unknown): FacilitatorSupportedResponse {
   for (const kind of value.kinds) {
     if (
       !isRecord(kind) ||
-      kind.x402Version !== 2 ||
+      !Number.isSafeInteger(kind.x402Version) ||
+      Number(kind.x402Version) <= 0 ||
       typeof kind.scheme !== "string" ||
       typeof kind.network !== "string" ||
       (kind.extra !== undefined && !isRecord(kind.extra))
     ) {
-      throw new Error("Kaspa x402 facilitator returned invalid /supported JSON");
+      throw new Error(
+        "Kaspa x402 facilitator returned invalid /supported JSON",
+      );
     }
   }
   return value as FacilitatorSupportedResponse;
