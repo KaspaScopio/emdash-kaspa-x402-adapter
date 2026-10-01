@@ -30,12 +30,6 @@ export interface FacilitatorSupportedResponse extends JsonRecord {
   signers: Record<string, string[]>;
 }
 
-export interface FacilitatorVerifyResponse extends JsonRecord {
-  isValid: boolean;
-  invalidReason?: string;
-  payer?: string;
-}
-
 export interface FacilitatorSettleResponse extends JsonRecord {
   success: boolean;
   transaction: string;
@@ -48,7 +42,6 @@ export interface FacilitatorSettleResponse extends JsonRecord {
 
 export interface FacilitatorTransport {
   supported(): Promise<FacilitatorSupportedResponse>;
-  verify(input: JsonRecord): Promise<FacilitatorVerifyResponse>;
   settle(input: JsonRecord): Promise<FacilitatorSettleResponse>;
 }
 export interface AuthoritativeRequirementsContext {
@@ -157,32 +150,17 @@ export function createExperimentalKaspaFacilitatorBackend(
         resource: resourceInfo(request, context),
         requestHash: requestHash.toLowerCase(),
       };
-      const verification = await options.transport.verify(facilitatorRequest);
-      if (!verification.isValid) {
-        throw new Error(
-          `Kaspa x402 facilitator rejected payment: ${verification.invalidReason ?? "invalid"}`,
-        );
-      }
-
+      // Settlement is the payment gate; protected work must wait for success.
       const settlement = await options.transport.settle(facilitatorRequest);
       if (!settlement.success) {
         throw new Error(
           `Kaspa x402 facilitator settlement failed: ${settlement.errorReason ?? "unknown"}`,
         );
       }
-      if (
-        verification.payer !== undefined &&
-        settlement.payer !== undefined &&
-        verification.payer !== settlement.payer
-      ) {
-        throw new Error(
-          "Kaspa x402 facilitator verify/settle payer mismatch",
-        );
-      }
       return {
         paid: true,
         skipped: false,
-        payer: verification.payer ?? settlement.payer,
+        payer: settlement.payer,
         settlement,
         responseHeaders: {
           [PAYMENT_RESPONSE_HEADER]: encodePaymentResponseHeader(
@@ -222,13 +200,9 @@ async function assertFacilitatorSupports(
     );
   }
   const modes = match.extra?.modes;
-  if (
-    !Array.isArray(modes) ||
-    !modes.includes("verify") ||
-    !modes.includes("settle")
-  ) {
+  if (!Array.isArray(modes) || !modes.includes("settle")) {
     throw new Error(
-      `Kaspa x402 facilitator does not advertise verify+settle for ${terms.scheme} on ${terms.network}`,
+      `Kaspa x402 facilitator does not advertise settle for ${terms.scheme} on ${terms.network}`,
     );
   }
 }
@@ -365,11 +339,6 @@ export function createFacilitatorHttpTransport(
         await readJson(await fetchImpl(`${root}/supported`, { method: "GET" })),
       );
     },
-    async verify(input) {
-      return verifyResponse(
-        await readJson(await fetchImpl(`${root}/verify`, jsonPost(input))),
-      );
-    },
     async settle(input) {
       return settleResponse(
         await readJson(await fetchImpl(`${root}/settle`, jsonPost(input))),
@@ -422,20 +391,6 @@ function supportedResponse(value: unknown): FacilitatorSupportedResponse {
     }
   }
   return value as FacilitatorSupportedResponse;
-}
-
-function verifyResponse(value: unknown): FacilitatorVerifyResponse {
-  if (!isRecord(value) || typeof value.isValid !== "boolean") {
-    throw new Error("Kaspa x402 facilitator returned invalid /verify JSON");
-  }
-  if (
-    (value.invalidReason !== undefined && typeof value.invalidReason !== "string") ||
-    (value.payer !== undefined && typeof value.payer !== "string") ||
-    (value.extra !== undefined && !isRecord(value.extra))
-  ) {
-    throw new Error("Kaspa x402 facilitator returned invalid /verify JSON");
-  }
-  return value as FacilitatorVerifyResponse;
 }
 
 function settleResponse(value: unknown): FacilitatorSettleResponse {

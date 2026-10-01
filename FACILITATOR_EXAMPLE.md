@@ -23,13 +23,13 @@ The example isolates this requirement behind `paymentRequirementsProvider`. It i
 ## Example flow
 
 1. Validate EmDash route terms; mainnet remains disabled by default.
-2. Call `/supported` and require x402 v2 + `exact` + the requested Kaspa network, with both `verify` and `settle` advertised in `extra.modes`.
+2. Call `/supported` and require x402 v2 + `exact` + the requested Kaspa network, with `settle` advertised in `extra.modes`.
 3. Obtain full authoritative requirements from `paymentRequirementsProvider`.
 4. Unpaid: return those requirements in `PAYMENT-REQUIRED`.
 5. Paid: recover authoritative requirements again and require exact equality with the signed `accepted` terms.
 6. Derive `requestHash` independently through `requestHashProvider`.
-7. Call `/verify`; only a valid result may proceed to `/settle`.
-8. Return `PAYMENT-RESPONSE` only after successful settlement.
+7. Call `/settle` directly; successful settlement is the upfront payment gate.
+8. Only then may protected work run; return `PAYMENT-RESPONSE` from the settlement.
 ## Question for upstream
 
 The example leaves one intentionally explicit seam:
@@ -72,7 +72,6 @@ finding.
 The experimental transport intentionally performs no automatic retries.
 
 - `/supported` failure is fail-closed and cannot widen capability.
-- `/verify` transport failure cannot fall through to `/settle`.
 - `/settle` transport failure is treated as an uncertain outcome; the adapter does not blindly issue a second settlement request.
 
 This is deliberately conservative. Any future retry policy should depend on an explicit facilitator idempotency/recovery contract rather than generic HTTP retry behavior.
@@ -130,3 +129,7 @@ experiment: a remote EmDash resource server still needs an authoritative source
 for the same dynamic requirements used for the initial challenge and paid
 retry. The experiment therefore continues to isolate that responsibility behind
 `paymentRequirementsProvider` rather than inventing an upstream API.
+
+## Maintainer guidance after RC2
+
+Upstream clarified that standard-native fixed-price requirements stay with the resource server, with a shared construction helper planned after v1. PR #5 therefore remains experimental. The facilitator-backed example follows x402 upfront semantics: it calls `/settle` directly before protected work and does not make a separate `/verify` call. Identical paid retries may reach the facilitator settlement path again; correctness relies on RC2 idempotent settlement. The adapter `enforce()` method is only the payment gate, so proving that an EmDash protected action itself executes once requires an integration harness above this backend boundary.

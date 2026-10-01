@@ -21,7 +21,7 @@ The current upstream implementation also reuses the same replay, idempotency, an
 
 Keep `DirectModeServer.handlePaidRequest()` as the current supported integration boundary. Add facilitator support later as an alternative backend, not as a breaking replacement.
 
-A future facilitator backend should discover `/supported`, preserve EmDash's expected payment terms, send independently derived request hashes, and map `/verify`/`/settle` results back to the same backend contract used today.
+A future facilitator backend should discover `/supported`, preserve EmDash's expected payment terms, send independently derived request hashes, and use `/settle` as the upfront payment gate before protected work.
 
 ## Gate before implementation
 
@@ -30,6 +30,6 @@ Do not publish a facilitator-backed adapter until the upstream package/API is pu
 Open questions for upstream:
 
 1. Which facilitator client/request helpers are intended as the stable framework-integration surface after v1?
-2. Should framework adapters call `/verify` then `/settle`, or is a higher-level seller helper planned?
+2. Confirmed for this integration: use `/settle` directly as the upfront payment gate; do not make a separate `/verify` call.
 3. What authentication mechanism is expected for settlement callers?
 4. Is there a specific area of facilitator development where an external contribution would be most useful now?

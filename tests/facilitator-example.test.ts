@@ -8,6 +8,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   createExperimentalKaspaFacilitatorBackend,
   createFacilitatorHttpTransport,
+  type FacilitatorSettleResponse,
   type FacilitatorTransport,
 } from "../src/experimental/facilitator-backend.js";
 
@@ -73,12 +74,11 @@ function transport(overrides: Partial<FacilitatorTransport> = {}) {
         x402Version: 2,
         scheme: "exact",
         network: "kaspa:testnet-10",
-        extra: { modes: ["verify", "settle"] },
+        extra: { modes: ["settle"] },
       }],
       extensions: [],
       signers: {},
     })),
-    verify: vi.fn(async () => ({ isValid: true, payer: "kaspatest:payer" })),
     settle: vi.fn(async () => ({
       success: true,
       transaction: "aa".repeat(32),
@@ -100,7 +100,8 @@ function backend(mockTransport = transport()) {
 
 describe("experimental facilitator-backed EmDash example", () => {
   it("builds the unpaid 402 from authoritative payment requirements", async () => {
-    const result = await backend().enforce(new Request(resourceUrl), context);
+    const mockTransport = transport();
+    const result = await backend(mockTransport).enforce(new Request(resourceUrl), context);
     expect(result).toBeInstanceOf(Response);
     const response = result as Response;
     expect(response.status).toBe(402);
@@ -108,22 +109,41 @@ describe("experimental facilitator-backed EmDash example", () => {
       response.headers.get("PAYMENT-REQUIRED")!,
     );
     expect(decoded.accepts).toEqual([requirements]);
+    expect(mockTransport.settle).not.toHaveBeenCalled();
   });
 
-  it("sends the independently derived requestHash to verify and settle", async () => {
+  it("sends authoritative requirements and the independently derived requestHash to settle", async () => {
     const mockTransport = transport();
+    const derivedHash = "AB".repeat(32);
+    const requestHashProvider = vi.fn(async () => derivedHash);
+    const candidate = createExperimentalKaspaFacilitatorBackend({
+      transport: mockTransport,
+      paymentRequirementsProvider: async () => requirements,
+      requestHashProvider,
+    });
     const request = new Request(resourceUrl, {
       headers: { "PAYMENT-SIGNATURE": paymentHeader() },
     });
-    const result = await backend(mockTransport).enforce(request, context);
+    const result = await candidate.enforce(request, context);
 
     expect(result).not.toBeInstanceOf(Response);
-    expect(mockTransport.verify).toHaveBeenCalledWith(
-      expect.objectContaining({ requestHash, paymentRequirements: requirements }),
-    );
     expect(mockTransport.settle).toHaveBeenCalledWith(
-      expect.objectContaining({ requestHash, paymentRequirements: requirements }),
+      expect.objectContaining({
+        x402Version: 2,
+        requestHash: derivedHash.toLowerCase(),
+        paymentRequirements: requirements,
+        paymentPayload: expect.objectContaining({
+          payload: expect.objectContaining({ requestHash }),
+        }),
+        resource: {
+          url: resourceUrl,
+          description: context.description,
+          mimeType: context.mimeType,
+        },
+      }),
     );
+    expect(requestHashProvider).toHaveBeenCalledWith({ request, context });
+    expect(mockTransport.settle).toHaveBeenCalledTimes(1);
     expect(result).toMatchObject({ paid: true, payer: "kaspatest:payer" });
     if (result instanceof Response || !result.responseHeaders) {
       throw new Error("expected paid facilitator result with response headers");
@@ -137,18 +157,41 @@ describe("experimental facilitator-backed EmDash example", () => {
       network: "kaspa:testnet-10",
     });
   });
-  it("does not settle when facilitator verification fails", async () => {
+
+  it("waits for successful settlement before allowing protected work", async () => {
+    let resolvePending!: (value: FacilitatorSettleResponse) => void;
+    const pending = new Promise<FacilitatorSettleResponse>((resolve) => { resolvePending = resolve; });
+    let resolveStarted!: () => void;
+    const started = new Promise<void>((resolve) => { resolveStarted = resolve; });
     const mockTransport = transport({
-      verify: vi.fn(async () => ({ isValid: false, invalidReason: "bad_payment" })),
+      settle: vi.fn(() => {
+        resolveStarted();
+        return pending;
+      }),
     });
+    const protectedWork = vi.fn();
     const request = new Request(resourceUrl, {
       headers: { "PAYMENT-SIGNATURE": paymentHeader() },
     });
+    const enforcement = backend(mockTransport).enforce(request, context).then((result) => {
+      if (!(result instanceof Response) && result.paid) protectedWork();
+      return result;
+    });
 
-    await expect(backend(mockTransport).enforce(request, context)).rejects.toThrow(
-      "bad_payment",
-    );
-    expect(mockTransport.settle).not.toHaveBeenCalled();
+    await started;
+    expect(protectedWork).not.toHaveBeenCalled();
+    resolvePending({
+      success: true,
+      transaction: "aa".repeat(32),
+      network: "kaspa:testnet-10",
+      amount: "20000000",
+      payer: "kaspatest:settled-payer",
+    });
+    await expect(enforcement).resolves.toMatchObject({
+      paid: true,
+      payer: "kaspatest:settled-payer",
+    });
+    expect(protectedWork).toHaveBeenCalledTimes(1);
   });
 
   it("rejects a payment whose accepted requirements are not authoritative", async () => {
@@ -160,7 +203,6 @@ describe("experimental facilitator-backed EmDash example", () => {
     await expect(backend(mockTransport).enforce(request, context)).rejects.toThrow(
       "authoritative requirements",
     );
-    expect(mockTransport.verify).not.toHaveBeenCalled();
     expect(mockTransport.settle).not.toHaveBeenCalled();
   });
   it("fails closed when exact TN10 omits the settle capability", async () => {
@@ -179,8 +221,7 @@ describe("experimental facilitator-backed EmDash example", () => {
 
     await expect(
       backend(mockTransport).enforce(new Request(resourceUrl), context),
-    ).rejects.toThrow("does not advertise verify+settle");
-    expect(mockTransport.verify).not.toHaveBeenCalled();
+    ).rejects.toThrow("does not advertise settle");
     expect(mockTransport.settle).not.toHaveBeenCalled();
   });
 
@@ -194,7 +235,7 @@ describe("experimental facilitator-backed EmDash example", () => {
     ).rejects.toThrow("does not support exact");
   });
 
-  it("rejects an invalid resource-server requestHash before verify", async () => {
+  it("rejects an invalid resource-server requestHash before settlement", async () => {
     const mockTransport = transport();
     const candidate = createExperimentalKaspaFacilitatorBackend({
       transport: mockTransport,
@@ -208,7 +249,7 @@ describe("experimental facilitator-backed EmDash example", () => {
     await expect(candidate.enforce(request, context)).rejects.toThrow(
       "requestHash must be 32-byte hex",
     );
-    expect(mockTransport.verify).not.toHaveBeenCalled();
+    expect(mockTransport.settle).not.toHaveBeenCalled();
   });
   it("keeps mainnet disabled by default", async () => {
     const candidate = backend();
@@ -239,15 +280,11 @@ describe("experimental facilitator-backed EmDash example", () => {
 });
 
 describe("experimental facilitator HTTP transport", () => {
-  it("uses the upstream /supported, /verify and /settle routes", async () => {
+  it("uses only the upstream /supported and /settle routes", async () => {
     const fetchSpy = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input);
       if (url.endsWith("/supported")) {
         return Response.json({ kinds: [], extensions: [], signers: {} });
-      }
-      if (url.endsWith("/verify")) {
-        expect(init?.method).toBe("POST");
-        return Response.json({ isValid: true });
       }
       if (url.endsWith("/settle")) {
         expect(init?.method).toBe("POST");
@@ -266,7 +303,6 @@ describe("experimental facilitator HTTP transport", () => {
       fetchSpy as unknown as typeof fetch,
     );
     await client.supported();
-    await client.verify({ example: "verify" });
     await client.settle({ example: "settle" });
 
     expect(fetchSpy).toHaveBeenNthCalledWith(
@@ -274,30 +310,15 @@ describe("experimental facilitator HTTP transport", () => {
       "https://facilitator.example/supported",
       { method: "GET" },
     );
-    expect(fetchSpy.mock.calls[1]?.[0]).toBe("https://facilitator.example/verify");
-    expect(fetchSpy.mock.calls[2]?.[0]).toBe("https://facilitator.example/settle");
-  });
-});
-
-
-describe("facilitator payer consistency", () => {
-  it("rejects contradictory verify and settle payer identities", async () => {
-    const mockTransport = transport({
-      verify: vi.fn(async () => ({ isValid: true, payer: "kaspatest:verify-payer" })),
-      settle: vi.fn(async () => ({
-        success: true,
-        transaction: "aa".repeat(32),
-        network: "kaspa:testnet-10",
-        amount: "20000000",
-        payer: "kaspatest:settle-payer",
-      })),
-    });
-    const request = new Request(resourceUrl, {
-      headers: { "PAYMENT-SIGNATURE": paymentHeader() },
-    });
-
-    await expect(backend(mockTransport).enforce(request, context)).rejects.toThrow(
-      "verify/settle payer mismatch",
+    expect(fetchSpy).toHaveBeenCalledTimes(2);
+    expect(fetchSpy).toHaveBeenNthCalledWith(
+      2,
+      "https://facilitator.example/settle",
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ example: "settle" }),
+      },
     );
   });
 });
@@ -314,33 +335,59 @@ describe("facilitator replay semantics", () => {
     const second = await candidate.enforce(paidRequest, context);
     expect(first).not.toBeInstanceOf(Response);
     expect(second).not.toBeInstanceOf(Response);
-    expect(mockTransport.verify).toHaveBeenCalledTimes(2);
     expect(mockTransport.settle).toHaveBeenCalledTimes(2);
+    expect(vi.mocked(mockTransport.settle).mock.calls[1]).toEqual(
+      vi.mocked(mockTransport.settle).mock.calls[0],
+    );
     if (first instanceof Response || second instanceof Response) {
       throw new Error("expected paid facilitator results");
     }
     expect(second.settlement).toEqual(first.settlement);
+    expect(second.responseHeaders).toEqual(first.responseHeaders);
   });
 
-  it("stops before settlement when verification rejects conflicting replay evidence", async () => {
-    const mockTransport = transport({
-      verify: vi.fn(async () => ({
-        isValid: false,
-        invalidReason: "invalid_transaction_state",
-      })),
+  it("rejects conflicting replay evidence through settlement", async () => {
+    const settle = vi.fn()
+      .mockResolvedValueOnce({
+        success: true,
+        transaction: "aa".repeat(32),
+        network: "kaspa:testnet-10",
+        amount: "20000000",
+      })
+      .mockResolvedValueOnce({
+        success: false,
+        transaction: "",
+        errorReason: "invalid_transaction_state",
+      });
+    const mockTransport = transport({ settle });
+    const conflictingHash = "ab".repeat(32);
+    const candidate = createExperimentalKaspaFacilitatorBackend({
+      transport: mockTransport,
+      paymentRequirementsProvider: async () => requirements,
+      requestHashProvider: vi.fn()
+        .mockResolvedValueOnce(requestHash)
+        .mockResolvedValueOnce(conflictingHash),
     });
-    const candidate = backend(mockTransport);
     const paidRequest = new Request(resourceUrl, {
       headers: { "PAYMENT-SIGNATURE": paymentHeader() },
     });
 
+    await expect(candidate.enforce(paidRequest, context)).resolves.toMatchObject({
+      paid: true,
+    });
     await expect(candidate.enforce(paidRequest, context)).rejects.toThrow(
       "invalid_transaction_state",
     );
-    expect(mockTransport.settle).not.toHaveBeenCalled();
+    expect(settle).toHaveBeenCalledTimes(2);
+    expect(settle).toHaveBeenNthCalledWith(1, expect.objectContaining({ requestHash }));
+    expect(settle).toHaveBeenNthCalledWith(2, expect.objectContaining({
+      requestHash: conflictingHash,
+    }));
+    expect(settle.mock.calls[1]?.[0].paymentPayload).toEqual(
+      settle.mock.calls[0]?.[0].paymentPayload,
+    );
   });
 });
-
 
 describe("experimental facilitator failure boundaries", () => {
   it("fails closed when /supported is unavailable", async () => {
@@ -353,25 +400,9 @@ describe("experimental facilitator failure boundaries", () => {
       backend(mockTransport).enforce(new Request(resourceUrl), context),
     ).rejects.toThrow("facilitator unavailable");
     expect(supported).toHaveBeenCalledTimes(1);
-    expect(mockTransport.verify).not.toHaveBeenCalled();
     expect(mockTransport.settle).not.toHaveBeenCalled();
   });
 
-  it("does not retry verification transport failures", async () => {
-    const verify = vi.fn(async () => {
-      throw new Error("verify transport failed");
-    });
-    const mockTransport = transport({ verify });
-    const request = new Request(resourceUrl, {
-      headers: { "PAYMENT-SIGNATURE": paymentHeader() },
-    });
-
-    await expect(backend(mockTransport).enforce(request, context)).rejects.toThrow(
-      "verify transport failed",
-    );
-    expect(verify).toHaveBeenCalledTimes(1);
-    expect(mockTransport.settle).not.toHaveBeenCalled();
-  });
   it("does not blindly retry an uncertain settlement failure", async () => {
     const settle = vi.fn(async () => {
       throw new DOMException("settlement timed out", "AbortError");
@@ -384,11 +415,9 @@ describe("experimental facilitator failure boundaries", () => {
     await expect(backend(mockTransport).enforce(request, context)).rejects.toThrow(
       "settlement timed out",
     );
-    expect(mockTransport.verify).toHaveBeenCalledTimes(1);
     expect(settle).toHaveBeenCalledTimes(1);
   });
 });
-
 
 describe("facilitator response validation", () => {
   it("rejects malformed /supported JSON", async () => {
@@ -399,14 +428,6 @@ describe("facilitator response validation", () => {
     await expect(client.supported()).rejects.toThrow("invalid /supported JSON");
   });
 
-  it("rejects malformed /verify JSON", async () => {
-    const client = createFacilitatorHttpTransport(
-      "https://facilitator.example",
-      vi.fn(async () => Response.json({ isValid: "yes" })) as unknown as typeof fetch,
-    );
-    await expect(client.verify({ example: true })).rejects.toThrow("invalid /verify JSON");
-  });
-
   it("rejects malformed /settle JSON", async () => {
     const client = createFacilitatorHttpTransport(
       "https://facilitator.example",
@@ -415,7 +436,6 @@ describe("facilitator response validation", () => {
     await expect(client.settle({ example: true })).rejects.toThrow("invalid /settle JSON");
   });
 });
-
 
 describe("facilitator response shape details", () => {
   it("rejects malformed signer lists from /supported", async () => {
@@ -428,11 +448,4 @@ describe("facilitator response shape details", () => {
     await expect(client.supported()).rejects.toThrow("invalid /supported JSON");
   });
 
-  it("rejects a non-string payer from /verify", async () => {
-    const client = createFacilitatorHttpTransport(
-      "https://facilitator.example",
-      vi.fn(async () => Response.json({ isValid: true, payer: 123 })) as unknown as typeof fetch,
-    );
-    await expect(client.verify({ example: true })).rejects.toThrow("invalid /verify JSON");
-  });
 });

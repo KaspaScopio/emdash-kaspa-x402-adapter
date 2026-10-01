@@ -8,14 +8,14 @@ Provide an optional EmDash backend that talks to a Kaspa x402 facilitator over H
 
 ## Boundary
 
-EmDash remains responsible for route policy, price, resource URL, method and timeout. The facilitator is responsible for capability discovery, payment verification and settlement.
+EmDash remains responsible for route policy, price, resource URL, method and timeout. The facilitator is responsible for capability discovery and settlement.
 
 The resource server must derive its own request hash for exact payments. It must not trust a request hash supplied by the payment artifact.
 
 ## Proposed components
 
 1. `createKaspaFacilitatorBackend(options)` implementing the same structural `X402Backend` contract.
-2. A small transport interface for `supported()`, `verify()` and `settle()` so HTTP details are testable independently.
+2. A small transport interface for `supported()` and `settle()` so HTTP details are testable independently.
 3. A future capability cache with bounded lifetime and fail-closed refresh behavior. The current isolated example deliberately calls `/supported` for each request and does not implement this cache yet.
 4. Explicit settlement authentication supplied by the deployment, never embedded in public adapter configuration.
 
@@ -32,16 +32,16 @@ Paid request:
 
 1. Decode and validate `PAYMENT-SIGNATURE` against the EmDash terms.
 2. Derive the resource request hash locally.
-3. Call `/verify` with payment payload, requirements, resource metadata and the derived hash.
-4. Only after successful verification, call `/settle` using authenticated facilitator transport.
-5. Return `PAYMENT-RESPONSE` only after a successful settlement response.
+3. Call `/settle` with payment payload, requirements, resource metadata and the derived hash. Settlement is the upfront payment gate.
+4. Only after successful settlement may protected work run.
+5. Return `PAYMENT-RESPONSE` from the successful settlement response.
 
 No protected callback may be executed twice for an identical completed retry. Replay and idempotency semantics must remain consistent with the direct-mode path.
 
 ## Failure and recovery rules
 
 - `/supported` failure must not silently widen capability.
-- `/verify` failure must not trigger settlement or protected work.
+- `/settle` failure must not trigger protected work.
 - `/settle` timeout or cancellation is an uncertain outcome: do not assume failure and retry blindly.
 - Transport retries need idempotency/replay evidence from the facilitator contract.
 - A facilitator URL, credentials and trust domain belong to deployment configuration, not package defaults.
