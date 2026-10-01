@@ -105,3 +105,28 @@ real deployment boundary for a resource server that wants to use only a remote
 facilitator. This observation does not prescribe whether upstream should add a
 helper, add a facilitator challenge operation, or keep requirements construction
 with a locally configured server.
+
+## RC2 recheck (v1.0.0-rc.2)
+
+Rechecked against upstream tag `v1.0.0-rc.2` at commit
+`724c5fff22de500fcf729c43b59d25036fbffa9c`.
+
+The integration boundary described above is still present in RC2:
+
+- the facilitator router exposes `GET /supported`, `POST /verify`, and `POST /settle`;
+- `/verify` and `/settle` consume a complete resource-server `paymentRequirements` object;
+- exact requests additionally require the resource server to compute `requestHash` independently;
+- the facilitator does not expose a requirements/challenge operation that creates the authoritative dynamic `PaymentRequirements` needed for the initial `402`.
+
+A clean RC2 checkout passed the facilitator package suite (36/36). The adapter
+experiment remains green (43/43), with typecheck and build passing. A router
+smoke against the built RC2 facilitator also confirmed that `/requirements` and
+`/challenge` are not routes (404), while `/supported`, `/verify`, and `/settle`
+remain the public HTTP surface.
+
+This does not imply that RC2 is missing functionality required by its own
+contract. It confirms the narrower framework-integration question from this
+experiment: a remote EmDash resource server still needs an authoritative source
+for the same dynamic requirements used for the initial challenge and paid
+retry. The experiment therefore continues to isolate that responsibility behind
+`paymentRequirementsProvider` rather than inventing an upstream API.
