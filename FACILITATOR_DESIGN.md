@@ -1,6 +1,6 @@
 # Experimental facilitator-backed EmDash design
 
-Status: experimental design plus a small isolated example. This does not change the production adapter API and does not add `@kaspa-x402/facilitator` as a dependency.
+Status: experimental design plus a small isolated example and prototype framework boundary. Not production-ready. This does not change the production adapter API and does not add `@kaspa-x402/facilitator` as a dependency.
 
 ## Goal
 
@@ -36,7 +36,7 @@ Paid request:
 4. Only after successful settlement may protected work run.
 5. Return `PAYMENT-RESPONSE` from the successful settlement response.
 
-No protected callback may be executed twice for an identical completed retry. The 2026-10-01 RC2 integration probe showed that the current `enforce()`-only boundary cannot guarantee this: settlement is idempotent, but a caller that executes protected work after each successful gate runs that work twice. Facilitator support therefore remains blocked on a framework-level replay mechanism or a backend boundary that wraps the protected action.
+No protected callback may be executed twice for an identical completed retry. The 2026-10-01 RC2 integration probe showed that the current `enforce()`-only boundary cannot guarantee this: settlement is idempotent, but a caller that executes protected work after each successful gate runs that work twice. The experimental action wrapper below prototypes the missing framework boundary; production support still requires deployment-owned durable coordination and recovery.
 
 ## Failure and recovery rules
 
@@ -63,9 +63,35 @@ The experiment still does not assume a stable facilitator package API. No npm re
 
 The RC2 probe narrows the missing integration primitive to the framework side. The
 payment gate cannot make arbitrary page/action work replay-safe after it returns.
-A future EmDash integration should therefore expose a wrapper around the protected
-operation, conceptually `executePaid(request, options, action)`, rather than trying
-to solve action replay inside `enforce()`.
+`src/experimental/protected-action-replay.ts` now provides
+`createExperimentalPaidActionExecutor({ backend, replayCoordinator, replayKeyProvider? })`.
+It returns `executePaid(request, context, action)`, wrapping the actual protected
+operation while leaving `enforce()` and all public package exports unchanged.
+
+Every invocation calls `backend.enforce()` first, including completed retries.
+Any returned `Response` passes through unchanged without action execution. Thrown
+enforcement/settlement errors propagate without action execution. Paid results go
+through `replayCoordinator.runOnce(key, action)`; successful unpaid/skipped results
+run the action directly. The action receives the enforcement result so its durable
+return value can include settlement metadata and response headers. The wrapper
+does not serialize results or merge headers on the application's behalf.
+
+The default key is the lowercase SHA-256 hex digest of UTF-8 JSON encoding of the
+fixed-order tuple
+`["emdash-kaspa-x402:protected-action-replay:v1", request.method, request.url, PAYMENT-SIGNATURE, enforcement.settlement.transaction]`.
+JSON string escaping makes field boundaries unambiguous; values are used exactly
+as exposed by `Request`. Missing, empty or non-string inputs fail closed before
+coordination or protected work. The default therefore requires structured settlement
+metadata; a backend exposing only a settlement header needs a deployment key provider.
+
+`replayKeyProvider({ request, context, enforcement })` can synchronously or
+asynchronously replace this policy with a stronger/shared operation identity. It
+must return a non-empty stable key and own equivalent identity validation. The
+default covers identical retries, not semantic equivalence across differently
+encoded payment signatures, changed URLs or different operations sharing a route.
+Deployments needing tenant/action namespaces, body binding or canonical payment
+identity must supply those through their key policy. This replay key is separate
+from the authoritative request hash validated during settlement.
 
 Required semantics:
 
@@ -83,3 +109,28 @@ an explicitly shared durable adapter supplied by it). The remote facilitator can
 persist an arbitrary EmDash page/action response because it does not execute that
 work. This also means an in-memory `Map` would only make a single-process demo look
 correct and is not an acceptable production fix.
+
+The caller-supplied `ProtectedActionReplayCoordinator<T>` is a contract, not a
+storage implementation. It must durably and atomically coordinate all processes,
+including preserving an uncertain state if a worker crashes after a possible side
+effect but before persisting its result. Lock expiry alone must never authorize
+another attempt. Cross-system side effects need explicit reconciliation or a
+transactional application design; this wrapper cannot provide that itself.
+
+Strict test-only coordination demonstrates sequential/concurrent identical retries,
+distinct identities, settlement gating and retained uncertain action failures. It
+does not establish crash safety or distributed durability. No production in-memory
+coordinator is provided. PR #5 remains experimental and not production-ready;
+development checks pin `@kaspa-x402/core` exactly to `1.0.0-rc.2`.
+
+
+### RC2 proof of the wrapper
+
+The wrapper is exercised by unit/concurrency tests and by a reproducible disposable
+RC2 integration proof. `npm run proof:facilitator-rc2` checks out exact upstream
+commit `724c5fff22de500fcf729c43b59d25036fbffa9c`, runs the real
+`DirectModeFacilitator` and router, submits the identical paid request twice, and
+asserts both settlement responses are equal while the protected action runs once.
+The upstream facilitator suite plus the injected proof passes 37/37. The proof uses
+a test-only in-memory coordinator; it validates the boundary, not production
+durability.

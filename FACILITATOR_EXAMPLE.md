@@ -1,6 +1,6 @@
 # Small EmDash facilitator example
 
-This branch contains a deliberately small facilitator-backed EmDash experiment. It is not exported by the package and does not depend on the unpublished `@kaspa-x402/facilitator` package.
+This branch contains a deliberately small facilitator-backed EmDash experiment and a prototype framework boundary for protected-action replay. It is still experimental and not production-ready. Neither is exported by the package, and neither depends on the unpublished `@kaspa-x402/facilitator` package. The development dependency on `@kaspa-x402/core` is pinned exactly to `1.0.0-rc.2`.
 
 It targets the public upstream facilitator shape at `elldeeone/kaspa-x402` revision `25893d68fc650cf307339619c8460b8814eba6c5`:
 
@@ -10,6 +10,8 @@ It targets the public upstream facilitator shape at `elldeeone/kaspa-x402` revis
 - exact payments require a resource-server-derived `requestHash`
 
 The direct `DirectModeServer.handlePaidRequest()` backend remains the reference path.
+
+The sections tied to revision `25893d68…` document the original experiment and are historical. The RC2 sections below supersede that earlier verify-before-settle exploration.
 
 A local interoperability smoke against the built upstream `DirectModeFacilitator` and `handleFacilitatorRequest()` at that exact revision confirmed that this experiment's `/supported`, `/verify`, and `/settle` request shapes are accepted without using wallet keys, RPC, or a live network. The smoke was intentionally kept out of the committed suite because it depends on a sibling upstream checkout.
 
@@ -29,27 +31,22 @@ The example isolates this requirement behind `paymentRequirementsProvider`. It i
 5. Paid: recover authoritative requirements again and require exact equality with the signed `accepted` terms.
 6. Derive `requestHash` independently through `requestHashProvider`.
 7. Call `/settle` directly; successful settlement is the upfront payment gate.
-8. Only then may protected work run; return `PAYMENT-RESPONSE` from the settlement.
-## Question for upstream
+8. Only then may protected work run through the caller's replay coordinator; identical completed retries return the stored protected result, including `PAYMENT-RESPONSE` if the application stored it.
+## Requirements ownership (answered upstream)
 
-The example leaves one intentionally explicit seam:
-
-> What is the intended source of authoritative `PaymentRequirements` for a remote framework integration?
-
-Two possible shapes would both fit the experiment:
-
-- the facilitator eventually exposes a small requirements/challenge operation; or
-- the resource server owns requirement construction/recovery through shared public helpers and deployment state.
-
-The example does not prefer one until the maintainer confirms the intended boundary.
+The maintainer confirmed after RC2 that standard-native fixed-price requirements
+stay with the resource server and should eventually use a shared construction helper.
+That helper is planned after v1. The experiment therefore keeps
+`paymentRequirementsProvider` as the resource-server-owned seam and does not invent
+a facilitator challenge endpoint.
 
 ## Safety and scope
 
 This is testnet-oriented experimental code. It is not part of the package export, does not enable mainnet, does not publish anything to npm, and does not claim production readiness.
 
-## Replay finding from the current upstream facilitator
+## Historical replay finding before RC2 guidance
 
-The current upstream facilitator documents `/settle` as using the same replay,
+At the earlier upstream revision, the facilitator documented `/settle` as using the same replay,
 idempotency and atomic commit path as direct paid requests. A disposable harness
 using the real `DirectModeServer`, `DirectModeFacilitator` and router confirmed
 that an **identical** completed retry remains valid: the same payment, request
@@ -76,7 +73,7 @@ The experimental transport intentionally performs no automatic retries.
 
 This is deliberately conservative. Any future retry policy should depend on an explicit facilitator idempotency/recovery contract rather than generic HTTP retry behavior.
 
-## Real upstream-router interoperability
+## Historical pre-RC2 router interoperability
 
 A disposable local harness was also run against Kaspa x402 upstream commit
 `25893d68fc650cf307339619c8460b8814eba6c5` using the real
@@ -118,7 +115,7 @@ The integration boundary described above is still present in RC2:
 - the facilitator does not expose a requirements/challenge operation that creates the authoritative dynamic `PaymentRequirements` needed for the initial `402`.
 
 A clean RC2 checkout passed the facilitator package suite (36/36). The adapter
-experiment remains green (43/43), with typecheck and build passing. A router
+experiment, typecheck and build also passed at that recheck. A router
 smoke against the built RC2 facilitator also confirmed that `/requirements` and
 `/challenge` are not routes (404), while `/supported`, `/verify`, and `/settle`
 remain the public HTTP surface.
@@ -149,9 +146,107 @@ runs the protected action after each successful `enforce()`, the identical retry
 that action a second time. The probe observed exactly two action executions for two
 identical paid requests.
 
-Therefore PR #5 must remain experimental. Settlement idempotency is not sufficient
-to claim EmDash action idempotency. Supporting the facilitator path safely requires
-either a framework-level response/action replay mechanism keyed to the paid request,
-or a backend boundary that wraps the actual protected action so replay can return the
-previous completed result. This experiment will not add an in-process cache and call
-it solved, because that would not provide correctness across processes or isolates.
+That first probe established the failure mode of the plain `enforce()` boundary.
+Settlement idempotency alone is not sufficient to claim EmDash action idempotency.
+PR #5 therefore remains experimental, and an in-process cache is not treated as a
+production fix because it cannot provide correctness across processes or isolates.
+
+## Prototype protected-action executor
+
+`src/experimental/protected-action-replay.ts` adds the framework boundary suggested
+by the probe. It leaves `src/index.ts` and package exports unchanged. The following
+source-level integration sketch assumes `backend`, `context`, `request`,
+`runProtectedEmDashAction` and a deployment-owned `durableCoordinator` are supplied
+by the application:
+
+```ts
+import {
+  createExperimentalPaidActionExecutor,
+  type ProtectedActionReplayCoordinator,
+} from "./src/experimental/protected-action-replay.js";
+
+type StoredPage = {
+  status: number;
+  body: string;
+  headers: Record<string, string>;
+};
+
+// Supplied by the deployment: durable storage plus atomic ownership across workers.
+const replayCoordinator: ProtectedActionReplayCoordinator<StoredPage> = durableCoordinator;
+const executePaid = createExperimentalPaidActionExecutor({ backend, replayCoordinator });
+
+const result = await executePaid(request, context, async (enforcement) => ({
+  status: 200,
+  body: await runProtectedEmDashAction(request),
+  headers: {
+    "content-type": "text/html",
+    ...enforcement.responseHeaders,
+  },
+}));
+
+// Materialize a fresh Response for each request, including a replayed result.
+return result instanceof Response
+  ? result
+  : new Response(result.body, { status: result.status, headers: result.headers });
+```
+
+The executor calls `backend.enforce()` first on every attempt. Any `Response`,
+including a `402`, is returned unchanged. A settlement/enforcement exception stops
+the action. A paid result invokes `replayCoordinator.runOnce(key, action)`;
+successful unpaid/skipped results invoke the action directly. Keep all protected
+side effects inside the callback. The coordinator must persist/reconstruct the
+callback's result; a live `Response` stream is not automatically durable. Store
+the desired body, status, headers and any settlement metadata in a suitable record.
+
+The default key is SHA-256 over the UTF-8 JSON tuple
+`["emdash-kaspa-x402:protected-action-replay:v1", request.method, request.url, PAYMENT-SIGNATURE, enforcement.settlement.transaction]`,
+returned as lowercase hex. The fixed order and escaped JSON strings prevent field
+boundary ambiguity. All four identity inputs must be non-empty strings or the paid
+action fails closed. The existing direct backend does not expose structured
+settlement metadata, so this default cannot be used with it without a custom key policy.
+
+An optional `replayKeyProvider({ request, context, enforcement })` replaces the
+default policy for deployments that have a stronger/shared identity. It may be
+async, must return a non-empty stable key, and is responsible for validating its
+identity inputs. For example, a deployment may need tenant/action namespacing,
+body binding or a canonical payment identity shared across routes and workers.
+The default protects identical paid retries; it does not collapse differently
+encoded signatures or semantically equivalent requests. It is not a replacement
+for the resource-server-derived `requestHash` used for settlement.
+
+`ProtectedActionReplayCoordinator` must elect one owner atomically across processes,
+make concurrent retries wait, persist completion before releasing results and return
+the stored result to identical retries. It must retain an uncertain action failure
+or crashed owner's state and fail closed until explicit recovery; dropping a failed
+entry or expiring a lock must not automatically rerun possible side effects.
+Retention must cover the payment replay window and deployment policy. Application
+side effects and replay storage may require transactional coupling or reconciliation.
+
+Only the tests contain a strict process-local coordinator. They prove action count
+one for sequential and concurrent identical retries, action count zero for challenge
+and failed settlement, separation of paid identities and no automatic rerun after
+an uncertain action failure. They do not prove distributed durability or crash
+recovery. No production coordinator is supplied; PR #5 remains experimental and
+not production-ready.
+
+
+## RC2 replay-boundary follow-up
+
+The protected-action wrapper was then tested against the same exact RC2 commit with
+the real `DirectModeFacilitator`, real `/supported` + `/settle` router and the
+standard-native exact-payment fixture. The identical paid request was submitted
+twice. Both RC2 settlement responses were equal and the protected action executed
+exactly once. The facilitator suite plus this injected proof passed 37/37.
+
+The proof is now reproducible with:
+
+```bash
+npm run proof:facilitator-rc2
+```
+
+Set `KASPA_X402_SOURCE_DIR` to an existing upstream checkout to avoid downloading it
+again; the script clones that checkout into a disposable worktree and still checks
+out the exact RC2 commit. This closes the experimental retry/action proof requested
+for PR #5, but it does **not** make the integration production-ready: the proof
+coordinator is test-only. A real deployment still needs durable atomic coordination
+and EmDash/the host must expose the protected-action wrapper boundary.

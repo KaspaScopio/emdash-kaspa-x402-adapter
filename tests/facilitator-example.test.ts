@@ -11,6 +11,7 @@ import {
   type FacilitatorSettleResponse,
   type FacilitatorTransport,
 } from "../src/experimental/facilitator-backend.js";
+import { createExperimentalPaidActionExecutor } from "../src/experimental/protected-action-replay.js";
 
 const resourceUrl = "https://cms.example/premium";
 const payTo =
@@ -99,6 +100,35 @@ function backend(mockTransport = transport()) {
 }
 
 describe("experimental facilitator-backed EmDash example", () => {
+  it.each(["challenge", "settlement failure"])(
+    "does not execute protected work after a real backend %s", async (failure) => {
+      const mockTransport = transport({
+        settle: vi.fn(async () => ({
+          success: false,
+          transaction: "",
+          errorReason: "settlement_failed",
+        })),
+      });
+      const runOnce = vi.fn(async () => { throw new Error("unexpected coordination"); });
+      const execute = createExperimentalPaidActionExecutor<string>({
+        backend: backend(mockTransport),
+        replayCoordinator: { runOnce },
+      });
+      const action = vi.fn(async () => "protected");
+      const request = new Request(resourceUrl, failure === "challenge" ? {} : {
+        headers: { "PAYMENT-SIGNATURE": paymentHeader() },
+      });
+      const result = execute(request, context, action);
+      if (failure === "challenge") {
+        await expect(result).resolves.toMatchObject({ status: 402 });
+      } else {
+        await expect(result).rejects.toThrow("settlement_failed");
+      }
+      expect(action).not.toHaveBeenCalled();
+      expect(runOnce).not.toHaveBeenCalled();
+    },
+  );
+
   it("builds the unpaid 402 from authoritative payment requirements", async () => {
     const mockTransport = transport();
     const result = await backend(mockTransport).enforce(new Request(resourceUrl), context);
