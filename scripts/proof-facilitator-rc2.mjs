@@ -7,6 +7,8 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 const EXPECTED_REF = "724c5fff22de500fcf729c43b59d25036fbffa9c";
 const UPSTREAM_URL = "https://github.com/elldeeone/kaspa-x402.git";
 const adapterRoot = resolve(dirname(fileURLToPath(import.meta.url)), "..");
+if (process.argv.includes("--emdash-http") && process.argv.includes("--emdash-atomic-http"))
+  throw new Error("Select one EmDash HTTP proof mode");
 const scratch = mkdtempSync(join(tmpdir(), "emdash-kaspa-x402-rc2-"));
 const upstream = join(scratch, "kaspa-x402");
 const source = process.env.KASPA_X402_SOURCE_DIR;
@@ -103,6 +105,21 @@ try {
     sourceText += `import { listenLoopback, startEmDashHttpProof } from ${JSON.stringify(helper)};\n`;
     sourceText += readFileSync(join(adapterRoot, "scripts/fixtures/rc2-emdash-http-proof.ts"), "utf8");
     console.log("EmDash HTTP proof source: " + emdashRef);
+  }
+  if (process.argv.includes("--emdash-atomic-http")) {
+    const emdash = process.env.EMDASH_ATOMIC_PROOF_SOURCE;
+    if (!emdash) throw new Error("Atomic HTTP proof requires a local EmDash prototype checkout");
+    const ref = execFileSync("git", ["rev-parse", "HEAD"], { cwd: emdash, encoding: "utf8" }).trim();
+    if (ref !== "cdcfff99573bab3e6425a9fe5d082c9558658b54")
+      throw new Error("Unexpected atomic EmDash source: " + ref);
+    const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: emdash, encoding: "utf8" }).trim();
+    if (dirty) throw new Error("Atomic EmDash source must be clean");
+    execFileSync("git", ["diff", "HEAD", "--exit-code"], { cwd: emdash, stdio: "pipe" });
+    const helper = pathToFileURL(join(adapterRoot, "scripts/fixtures/emdash-atomic-http-server.mjs")).href;
+    sourceText += '\nimport { beforeAll, beforeEach, afterAll } from "vitest";\n';
+    sourceText += `import { listenLoopback, startAtomicHttpProof, atomicHttpRequestHash } from ${JSON.stringify(helper)};\n`;
+    sourceText += readFileSync(join(adapterRoot, "scripts/fixtures/rc2-emdash-atomic-http-proof.ts"), "utf8");
+    console.log("Atomic EmDash HTTP proof source: " + ref);
   }
   writeFileSync(testFile, sourceText);
 
