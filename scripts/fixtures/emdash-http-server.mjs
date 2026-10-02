@@ -25,12 +25,6 @@ export async function listenLoopback(handler) {
     }),
   };
 }
-async function freePort() {
-  const listener = await listenLoopback((_, response) => response.end());
-  const port = Number(new URL(listener.url).port);
-  await listener.close();
-  return port;
-}
 export async function startEmDashHttpProof(terms, facilitatorUrl) {
   const emdash = process.env.EMDASH_HTTP_PROOF_SOURCE;
   if (!emdash) throw new Error("EMDASH_HTTP_PROOF_SOURCE is required");
@@ -45,8 +39,7 @@ export async function startEmDashHttpProof(terms, facilitatorUrl) {
   symlinkSync(join(emdash, "demos/simple/node_modules"), join(cwd, "node_modules"));
   writeFileSync(join(cwd, "requirements.json"), JSON.stringify(terms));
   const secret = randomUUID();
-  const port = await freePort();
-  const url = "http://127.0.0.1:" + port;
+  let url;
   const dbPath = join(cwd, "proof.db");
   mkdirSync(join(cwd, "uploads"));
   const env = {
@@ -57,8 +50,33 @@ export async function startEmDashHttpProof(terms, facilitatorUrl) {
   };
   for (const key of Object.keys(env))
     if (key === "VITEST" || key.startsWith("VITEST_")) delete env[key];
-  const child = spawn(join(cwd, "node_modules/.bin/astro"),
-    ["dev", "--host", "127.0.0.1", "--port", String(port)], { cwd, env, stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(process.execPath, [join(cwd, "serve.mjs")], {
+    cwd, env, stdio: ["ignore", "pipe", "pipe", "ipc"],
+  });
+  const ready = new Promise((resolve, reject) => {
+    const finish = (error, address) => {
+      clearTimeout(timeout);
+      child.off("message", onMessage);
+      child.off("error", onError);
+      child.off("exit", onExit);
+      if (error) reject(error); else resolve(address);
+    };
+    const onError = (error) => finish(error);
+    const onExit = (code, signal) => finish(new Error("Astro exited before readiness: " + (signal ?? code)));
+    const onMessage = (message) => {
+      if (message?.type !== "emdash-http-proof:ready" ||
+          message.nonce !== secret || message.address !== "127.0.0.1" ||
+          !Number.isInteger(message.port) || message.port <= 0 || message.port > 65535) {
+        finish(new Error("Invalid Astro readiness message"));
+        return;
+      }
+      finish(undefined, "http://127.0.0.1:" + message.port);
+    };
+    const timeout = setTimeout(() => finish(new Error("Astro startup timed out")), 90000);
+    child.on("message", onMessage);
+    child.once("error", onError);
+    child.once("exit", onExit);
+  });
   let output = "";
   for (const stream of [child.stdout, child.stderr])
     stream.on("data", (data) => { output = (output + data).slice(-12000); });
@@ -66,7 +84,7 @@ export async function startEmDashHttpProof(terms, facilitatorUrl) {
   async function close() {
     if (closed) return;
     closed = true;
-    if (child.exitCode === null && child.signalCode === null) {
+    if (child.pid && child.exitCode === null && child.signalCode === null) {
       const exited = once(child, "exit");
       const kill = setTimeout(() => child.kill("SIGKILL"), 3000);
       child.kill("SIGTERM");
@@ -87,19 +105,9 @@ export async function startEmDashHttpProof(terms, facilitatorUrl) {
     return response.json();
   }
   try {
-    const deadline = Date.now() + 90000;
-    let setup;
-    for (;;) {
-      if (child.exitCode !== null || child.signalCode !== null) throw new Error("Astro exited");
-      try {
-        setup = await fetch(url + "/_emdash/api/setup/dev-bypass?token=1&content=0",
-          { signal: AbortSignal.timeout(30000) });
-        break;
-      } catch {
-        if (Date.now() > deadline) throw new Error("Astro startup timed out");
-        await new Promise((resolve) => setTimeout(resolve, 100));
-      }
-    }
+    url = await ready;
+    const setup = await fetch(url + "/_emdash/api/setup/dev-bypass?token=1&content=0",
+      { signal: AbortSignal.timeout(30000) });
     if (!setup.ok) throw new Error("EmDash setup failed: " + setup.status + " " + await setup.text());
     const token = (await setup.json()).data.token;
     if (!token) throw new Error("EmDash did not issue a PAT");

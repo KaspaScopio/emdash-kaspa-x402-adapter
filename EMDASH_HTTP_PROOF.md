@@ -27,20 +27,29 @@ fixtures, SQLite databases, server logs and the injected upstream test file.
 
 ## What runs
 
-Verified result: 52/52 cases (36 upstream, eight adapter proof cases and eight
+Verified result: 54/54 cases (36 upstream, eight adapter proof cases and ten
 real HTTP cases). The adapter suite separately passes 90/90, typecheck, build
-and production dependency audit.
+and production dependency audit. The separate `emdash-http-proof` CI job runs
+`npm run proof:emdash-http-rc2` on pull requests and main pushes with pnpm 11.9.0.
 
 The fixture keeps the React renderer inside Vite SSR so its Astro virtual
 options are resolved with the workspace packages.
+
+Astro binds its own port and reports it over a nonce-checked parent/child IPC
+channel. The parent sends no setup request before that readiness message;
+there is no provisional port to release and reuse. A regression case claims
+any released provisional reservation and verifies setup never reaches it.
 
 Two loopback HTTP servers run. One serves the real RC2
 `DirectModeFacilitator` through `handleFacilitatorRequest`; the other runs
 Astro with the pinned EmDash integration and SQLite.
 
 The EmDash development-only setup endpoint creates a test admin and PAT.
-Requests retain the real EmDash authentication, CSRF checks, permissions,
-schema validation, runtime and content-create handler. Application middleware
+Requests use the real EmDash authentication, permissions, schema validation,
+runtime and content-create handler. PAT authentication intentionally skips the
+session CSRF check; the proof does not exercise cookie/session CSRF protection.
+A dedicated case confirms the PAT exemption without X-EmDash-Request.
+Application middleware
 wraps `next()` for `POST /_emdash/api/content/posts`. The action executes
 only after successful settlement. This fixture passes an ordinary Astro
 request to `next()`; it does not mutate that request during enforcement.
@@ -52,7 +61,7 @@ the resource server's startup configuration. The submitted payment cannot
 change them. The resource server derives the request hash from method, URL,
 body and tenant. Recorded facilitator traffic must have no `/verify` calls.
 
-The eight HTTP cases assert:
+The ten HTTP cases assert:
 
 1. Unpaid 402 uses authoritative requirements and creates no content.
 2. Sequential identical payments return the same 201 body, content ID and
@@ -66,6 +75,9 @@ The eight HTTP cases assert:
 7. Negative control: enforcement without coordination creates two rows for
    the same settlement.
 8. Negative control: replacing the local coordinator permits a second row.
+9. PAT authentication works without the session CSRF header, as EmDash intends.
+10. Startup uses the child's bound address and never contacts a listener that
+    claims a released provisional port.
 
 SQL reads also verify the returned content ID, title and author. The current
 create handler does not create an initial revision; the revision count is

@@ -226,4 +226,57 @@ describe("real EmDash/Astro HTTP boundary against RC2", () => {
     await emdashHttpAssertFlow(2, 2);
     emdashHttpRows(2);
   }, 30000);
+
+  it("keeps PAT authentication semantics without exercising session CSRF", async () => {
+    const payment = await emdashHttpPayment("PAT without session CSRF");
+    const headers = { ...payment.headers };
+    delete headers["x-emdash-request"];
+    expect((await payment.send(headers)).status).toBe(201);
+    emdashHttpRows(1);
+    await emdashHttpAssertFlow(1, 1);
+  }, 30000);
+
+  it("starts on its own bound port even if a provisional reservation would be stolen", async () => {
+    const http = (await import("node:http")).default;
+    const { syncBuiltinESMExports } = await import("node:module");
+    const originalCreate = http.createServer;
+    let blocker: ReturnType<typeof http.createServer> | undefined;
+    let hits = 0;
+    let app: Awaited<ReturnType<typeof startEmDashHttpProof>> | undefined;
+    http.createServer = ((...args: any[]) => {
+      const listener = (originalCreate as any)(...args);
+      const originalClose = listener.close.bind(listener);
+      listener.close = (callback: (error?: Error) => void) => {
+        const port = listener.address().port;
+        return originalClose((error?: Error) => {
+          if (error) return callback(error);
+          blocker = originalCreate((_request, response) => {
+            hits += 1;
+            response.writeHead(503);
+            response.end("occupied provisional port");
+          });
+          blocker.listen(port, "127.0.0.1", () => callback());
+        });
+      };
+      return listener;
+    }) as typeof http.createServer;
+    syncBuiltinESMExports();
+    try {
+      app = await startEmDashHttpProof(emdashHttpTerms, emdashHttpListener.url);
+      expect(app.url).not.toBe(emdashHttpApp.url);
+      expect((await app.control()).actionRuns).toBe(0);
+      expect(app.rows()).toEqual({ posts: 0, revisions: 0 });
+      expect(hits).toBe(0);
+    } finally {
+      http.createServer = originalCreate;
+      syncBuiltinESMExports();
+      try { await app?.close(); } finally {
+        if (blocker) await new Promise<void>((resolve) => {
+          blocker!.close(() => resolve());
+          blocker!.closeAllConnections();
+        });
+      }
+    }
+  }, 120000);
+
 });

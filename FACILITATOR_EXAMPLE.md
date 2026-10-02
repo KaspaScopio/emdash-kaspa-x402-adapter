@@ -147,5 +147,5 @@ distributed durability, crash recovery, mainnet safety or stock EmDash compatibi
 
 A separate [EmDash/Astro HTTP proof](EMDASH_HTTP_PROOF.md) runs the actual
 content-create endpoint and checks SQLite writes. Run it with
-`npm run proof:emdash-http-rc2`. It adds eight HTTP cases while retaining
+`npm run proof:emdash-http-rc2`. It adds ten HTTP cases while retaining
 simulated chain verification and a test-only local coordinator.
