@@ -1,6 +1,6 @@
 # Atomic runtime HTTP experiment
 
-This local-only experiment connects the real EmDash/Astro content-create POST route
+This experimental proof connects the real EmDash/Astro content-create POST route
 to the opt-in SQLite atomic runtime boundary, through the real RC2 facilitator HTTP
 handler. It extends the process-only runtime proof with paid HTTP retries and
 resource-server SIGKILL/restarts. It is not a stock EmDash feature or a production
@@ -10,20 +10,25 @@ deployment recipe.
 
 - Kaspa x402: `v1.0.0-rc.2`, commit
   `724c5fff22de500fcf729c43b59d25036fbffa9c`.
-- EmDash atomic runtime prototype: local branch `experiment/atomic-content-runtime`,
-  commit `cdcfff99573bab3e6425a9fe5d082c9558658b54`.
-  This commit is not published in the upstream EmDash repository.
+- EmDash atomic runtime prototype: [fork draft PR #1](https://github.com/KaspaScopio/emdash/pull/1),
+  branch `experiment/atomic-content-runtime`, commit
+  `cdcfff99573bab3e6425a9fe5d082c9558658b54`, in `KaspaScopio/emdash`.
+  Its base is upstream commit `9d4962125370ca03b43179232740da47409f4088`;
+  this proof does not establish compatibility with later upstream main commits.
+  The prototype is not an approved or published upstream EmDash feature.
 - Node.js 22.16+ with `node:sqlite`, and EmDash's pinned pnpm version.
 
-Provide a clean checkout of the local prototype and run:
+From a clean adapter checkout, run:
 
 ```sh
-EMDASH_ATOMIC_PROOF_SOURCE=/absolute/path/to/emdash-prototype \
-  npm run proof:emdash-atomic-http-rc2
+npm run proof:emdash-atomic-http-rc2
 ```
 
-The wrapper verifies EmDash HEAD and cleanliness, installs with its frozen lockfile
-and builds EmDash. The RC2 runner clones a fresh upstream checkout, verifies its
+The wrapper clones `https://github.com/KaspaScopio/emdash.git`, checks out the exact
+prototype commit, verifies HEAD and cleanliness, installs with its frozen lockfile
+and builds EmDash. Optionally set EMDASH_ATOMIC_PROOF_SOURCE to an existing clean
+checkout of that exact commit; its source and build are never removed by the wrapper.
+The RC2 runner clones a fresh upstream checkout, verifies its
 commit, tag and package versions, runs npm ci in both repositories, builds the
 facilitator, then runs the upstream facilitator suite with the proof cases appended.
 An optional KASPA_X402_SOURCE_DIR supplies a Git clone cache; the checkout still
@@ -44,6 +49,14 @@ The exclusion prevents Vitest discovering duplicate copies through node_modules
 symlinks in retained HTTP fixtures; that regression should contain 18 tests.
 
 ## Host boundary and observations
+
+The proof uses experimental host middleware backed by the adapter's payment gate,
+not EmDash's stock x402 enforcer. A source review of upstream main at
+`7ccf600696520b8cd2de0ca30aa92b02c982cb01` confirms that X402Enforcer.enforce()
+still returns a gate result and leaves protected work to its caller. That stock
+enforcer calls verifyPayment followed by settlePayment; the no-/verify observation
+below applies to this experimental adapter flow. No execution against that latest
+upstream commit is claimed.
 
 The resource server supplies authoritative fixed PaymentRequirements and derives
 requestHash from method, complete URL, original body bytes, authorization header
@@ -122,6 +135,7 @@ Keep the integration experimental.
 - The generated final HTTP test fixture matches the reviewed source exactly;
   the cloned upstream has only its facilitator test file changed by the runner.
 
-The wrapper with frozen install/full EmDash build and the fresh-checkout RC2 run
-both passed. These observations apply to the pinned inputs and the test fixtures
-described above.
+The default command was also run without either source override: it cloned both
+public repositories, checked the pins, completed frozen install/full EmDash build
+and passed all 69 cases. These observations apply to the pinned inputs and the
+test fixtures described above.

@@ -90,10 +90,11 @@ runs `npm run proof:emdash-http-rc2` against pinned EmDash and Kaspa x402 RC2
 sources. It checks real content writes and settlement replay with simulated
 chain verification and a test-only coordinator.
 
-The local [atomic runtime HTTP experiment](./ATOMIC_RUNTIME_HTTP_PROOF.md) runs
+The experimental [atomic runtime HTTP proof](./ATOMIC_RUNTIME_HTTP_PROOF.md) runs
 `npm run proof:emdash-atomic-http-rc2` against the separate EmDash prototype.
 It adds real SQLite replay across HTTP worker SIGKILL/restarts and retains
-simulated chain verification. The prototype source is required locally.
+simulated chain verification. The command clones the pinned public prototype
+from [KaspaScopio's EmDash fork draft](https://github.com/KaspaScopio/emdash/pull/1).
 
 ## Testnet proof
 
