@@ -85,6 +85,11 @@ npm run build
 
 These checks use only public npm dependencies.
 
+The separate experimental [EmDash/Astro HTTP proof](./EMDASH_HTTP_PROOF.md)
+runs `npm run proof:emdash-http-rc2` against pinned EmDash and Kaspa x402 RC2
+sources. It checks real content writes and settlement replay with simulated
+chain verification and a test-only coordinator.
+
 ## Testnet proof
 
 The live proof is intentionally wired to the public `elldeeone/kaspa-x402` reference harness rather than a private copy. For a reproducible run, use a separate checkout and pin the exact upstream revision. The example below pins `25893d68fc650cf307339619c8460b8814eba6c5`, the public `main` revision at the time these instructions were written.

@@ -144,3 +144,8 @@ page record, not an actual EmDash action.
 These results support the experimental same-settlement/action-once boundary within
 a retained coordinator and stable operation identity. They do not establish
 distributed durability, crash recovery, mainnet safety or stock EmDash compatibility.
+
+A separate [EmDash/Astro HTTP proof](EMDASH_HTTP_PROOF.md) runs the actual
+content-create endpoint and checks SQLite writes. Run it with
+`npm run proof:emdash-http-rc2`. It adds eight HTTP cases while retaining
+simulated chain verification and a test-only local coordinator.

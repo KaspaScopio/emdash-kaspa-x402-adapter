@@ -120,5 +120,7 @@ EmDash action. This is protocol/host-boundary evidence, not a funded TN10 proof.
 
 Current stock EmDash exposes an enforce gate and leaves protected rendering/work
 outside it. Production action-once needs a host/framework boundary plus durable
-coordination. Keep this PR experimental, as requested in
+coordination. The additional [EmDash/Astro HTTP proof](EMDASH_HTTP_PROOF.md)
+exercises that boundary around the real content-create endpoint with SQLite;
+it retains the simulated-chain and process-local-coordinator limits. Keep this PR experimental, as requested in
 [upstream issue #15](https://github.com/elldeeone/kaspa-x402/issues/15#issuecomment-5926474763).

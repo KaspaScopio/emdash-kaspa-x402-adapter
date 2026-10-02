@@ -89,6 +89,21 @@ try {
       join(adapterRoot, "scripts/fixtures/rc2-facilitator-proof.ts"),
       "utf8",
     );
+  if (process.argv.includes("--emdash-http")) {
+    const emdash = process.env.EMDASH_HTTP_PROOF_SOURCE;
+    if (!emdash) throw new Error("The EmDash HTTP proof requires its pinned source checkout");
+    const emdashRef = execFileSync("git", ["rev-parse", "HEAD"], { cwd: emdash, encoding: "utf8" }).trim();
+    if (emdashRef !== "913cb1bb9b7f08c3ff0d258b4420e53835b6a58e")
+      throw new Error("Unexpected EmDash source commit: " + emdashRef);
+    const dirty = execFileSync("git", ["status", "--porcelain"], { cwd: emdash, encoding: "utf8" }).trim();
+    if (dirty) throw new Error("The EmDash proof checkout must be clean");
+    execFileSync("git", ["diff", "HEAD", "--exit-code"], { cwd: emdash, stdio: "pipe" });
+    const helper = pathToFileURL(join(adapterRoot, "scripts/fixtures/emdash-http-server.mjs")).href;
+    sourceText += "\nimport { beforeAll, beforeEach, afterAll } from \"vitest\";\n";
+    sourceText += `import { listenLoopback, startEmDashHttpProof } from ${JSON.stringify(helper)};\n`;
+    sourceText += readFileSync(join(adapterRoot, "scripts/fixtures/rc2-emdash-http-proof.ts"), "utf8");
+    console.log("EmDash HTTP proof source: " + emdashRef);
+  }
   writeFileSync(testFile, sourceText);
 
   run(
