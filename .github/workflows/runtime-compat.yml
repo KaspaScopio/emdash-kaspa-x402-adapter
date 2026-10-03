@@ -14,7 +14,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        core: ["0.1.0-alpha.10", "1.0.0-rc.1"]
+        core: ["0.1.0-alpha.10", "1.0.0-rc.1", "1.0.0-rc.2"]
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -22,7 +22,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm install --no-save --package-lock=false @kaspa-x402/core@${{ matrix.core }}
+      # npm 10 can crash resolving Vitest 4 optional peer dependencies.
+      - run: npx --yes npm@11.21.0 install --no-save --package-lock=false @kaspa-x402/core@${{ matrix.core }}
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
