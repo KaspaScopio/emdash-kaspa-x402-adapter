@@ -27,7 +27,8 @@ jobs:
           node-version: 22
           cache: npm
       - run: npm ci
-      - run: npm install --no-save --package-lock=false @kaspa-x402/core@${{ matrix.core }}
+      # npm 10 can crash resolving Vitest 4 optional peer dependencies.
+      - run: npx --yes npm@11.21.0 install --no-save --package-lock=false @kaspa-x402/core@${{ matrix.core }}
       - run: npm test
       - run: npm run typecheck
       - run: npm run build
