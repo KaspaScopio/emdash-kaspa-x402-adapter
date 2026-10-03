@@ -1,0 +1,21 @@
+{
+  "version": "1",
+  "meta": {
+    "name": "RC2 HTTP proof"
+  },
+  "collections": [
+    {
+      "slug": "posts",
+      "label": "Posts",
+      "labelSingular": "Post",
+      "fields": [
+        {
+          "slug": "title",
+          "label": "Title",
+          "type": "string",
+          "required": true
+        }
+      ]
+    }
+  ]
+}

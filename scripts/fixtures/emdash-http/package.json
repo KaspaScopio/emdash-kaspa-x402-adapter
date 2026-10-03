@@ -1,0 +1,8 @@
+{
+  "name": "rc2-emdash-http-proof",
+  "private": true,
+  "type": "module",
+  "emdash": {
+    "seed": ".emdash/seed.json"
+  }
+}
