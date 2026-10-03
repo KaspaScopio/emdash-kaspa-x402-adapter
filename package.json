@@ -19,7 +19,9 @@
     "typecheck": "tsc --noEmit",
     "proof:tn10": "npm run build && node scripts/proof-tn10-e2e.mjs",
     "proof:facilitator-rc2": "node scripts/proof-facilitator-rc2.mjs",
-    "proof:emdash-http-rc2": "node scripts/proof-emdash-http-rc2.mjs"
+    "proof:emdash-http-rc2": "node scripts/proof-emdash-http-rc2.mjs",
+    "proof:emdash-atomic-http-rc2": "node scripts/proof-emdash-atomic-http-rc2.mjs",
+    "proof:durable-content-sqlite": "node scripts/proof-durable-content-sqlite.mjs"
   },
   "peerDependencies": {
     "@kaspa-x402/core": ">=0.1.0-alpha.10"
